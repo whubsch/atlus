@@ -1,5 +1,4 @@
-"""`overturetoosm` is a Python package to convert objects tagged in the 
-Overture schema for use in OSM. Only Overture's `places` layer is currently supported.
+"""`atlus` is a Python package to convert raw address strings into the OSM format.
 """
 
 # SPDX-FileCopyrightText: 2024-present Will <wahubsch@gmail.com>

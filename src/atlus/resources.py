@@ -1,5 +1,7 @@
 """Hold info for the processing script."""
 
+import regex
+
 direction_expand = {
     "NE": "Northeast",
     "SE": "Southeast",
@@ -480,3 +482,41 @@ bad_zip_first_3 = [
     "987",
 ]
 """Three-digit combinations that don't represent a zip code."""
+
+# pre-compile regex for speed
+ABBR_JOIN = "|".join(name_expand | street_expand)
+abbr_join_comp = regex.compile(
+    rf"(\b(?:{ABBR_JOIN})\b\.?)(?!')",
+    flags=regex.IGNORECASE,
+)
+
+DIR_FILL = "|".join(r"\.?".join(list(abbr)) for abbr in direction_expand)
+dir_fill_comp = regex.compile(
+    rf"(?<!(?:^(?:Avenue) |[\.']))(\b(?:{DIR_FILL})\b\.?)(?!(?:\.?[a-zA-Z]| (?:Street|Avenue)))",
+    flags=regex.IGNORECASE,
+)
+
+sr_comp = regex.compile(
+    r"(\bS\.?R\b\.?)(?= \d+)",
+    flags=regex.IGNORECASE,
+)
+
+saint_comp = regex.compile(
+    rf"^(St\.?)(?= )|(\bSt\.?)(?= (?:{'|'.join(saints)}))",
+    flags=regex.IGNORECASE,
+)
+
+street_comp = regex.compile(
+    r"St\.?(?= [NESW]\.?[EW]?\.?)|(?<=\d[thndstr]{2} )St\.?\b|St\.?$"
+)
+
+post_comp = regex.compile(r"(\d{5})-?0{4}")
+
+usa_comp = regex.compile(r",? (?:USA?|United States(?: of America)?|Canada)\b")
+
+paren_comp = regex.compile(r" ?\(.*\)")
+
+# match Wisconsin grid-style addresses: N65w25055, W249 N6620, etc.
+grid_comp = regex.compile(
+    r"\b([NnSs]\d{2,}\s*[EeWw]\d{2,}|[EeWw]\d{2,}\s*[NnSs]\d{2,})\b"
+)

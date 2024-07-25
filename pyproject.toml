@@ -30,22 +30,22 @@ Issues = "https://github.com/whubsch/atlus_py/issues"
 Source = "https://github.com/whubsch/atlus_py"
 
 [tool.hatch.version]
-path = "src/atlus_py/__about__.py"
+path = "src/atlus/__about__.py"
 
 [tool.hatch.envs.types]
 extra-dependencies = ["mypy>=1.0.0"]
 [tool.hatch.envs.types.scripts]
-check = "mypy --install-types --non-interactive {args:src/atlus_py tests}"
+check = "mypy --install-types --non-interactive {args:src/atlus tests}"
 
 [tool.coverage.run]
-source_pkgs = ["atlus_py", "tests"]
+source_pkgs = ["atlus", "tests"]
 branch = true
 parallel = true
-omit = ["src/atlus_py/__about__.py"]
+omit = ["src/atlus/__about__.py"]
 
 [tool.coverage.paths]
-atlus_py = ["src/atlus_py", "*/atlus_py/src/atlus_py"]
-tests = ["tests", "*/atlus_py/tests"]
+atlus_py = ["src/atlus", "*/atlus_py/src/atlus"]
+tests = ["tests", "*/atlus/tests"]
 
 [tool.coverage.report]
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]

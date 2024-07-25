@@ -8,8 +8,16 @@ from .resources import (
     street_expand,
     direction_expand,
     name_expand,
-    saints,
     state_expand,
+    saint_comp,
+    abbr_join_comp,
+    dir_fill_comp,
+    sr_comp,
+    usa_comp,
+    paren_comp,
+    grid_comp,
+    post_comp,
+    street_comp,
 )
 
 toss_tags = [
@@ -178,45 +186,6 @@ def lower_match(match: regex.Match) -> str:
 def grid_match(match_str: regex.Match) -> str:
     """Clean grid addresses."""
     return match_str.group(0).replace(" ", "").upper()
-
-
-# pre-compile regex for speed
-ABBR_JOIN = "|".join(name_expand | street_expand)
-abbr_join_comp = regex.compile(
-    rf"(\b(?:{ABBR_JOIN})\b\.?)(?!')",
-    flags=regex.IGNORECASE,
-)
-
-DIR_FILL = "|".join(r"\.?".join(list(abbr)) for abbr in direction_expand)
-dir_fill_comp = regex.compile(
-    rf"(?<!(?:^(?:Avenue) |[\.']))(\b(?:{DIR_FILL})\b\.?)(?!(?:\.?[a-zA-Z]| (?:Street|Avenue)))",
-    flags=regex.IGNORECASE,
-)
-
-sr_comp = regex.compile(
-    r"(\bS\.?R\b\.?)(?= \d+)",
-    flags=regex.IGNORECASE,
-)
-
-saint_comp = regex.compile(
-    rf"^(St\.?)(?= )|(\bSt\.?)(?= (?:{'|'.join(saints)}))",
-    flags=regex.IGNORECASE,
-)
-
-street_comp = regex.compile(
-    r"St\.?(?= [NESW]\.?[EW]?\.?)|(?<=\d[thndstr]{2} )St\.?\b|St\.?$"
-)
-
-post_comp = regex.compile(r"(\d{5})-?0{4}")
-
-usa_comp = regex.compile(r",? (?:USA?|United States(?: of America)?|Canada)\b")
-
-paren_comp = regex.compile(r" ?\(.*\)")
-
-# match Wisconsin grid-style addresses: N65w25055, W249 N6620, etc.
-grid_comp = regex.compile(
-    r"\b([NnSs]\d{2,}\s*[EeWw]\d{2,}|[EeWw]\d{2,}\s*[NnSs]\d{2,})\b"
-)
 
 
 def abbrs(value: str) -> str:

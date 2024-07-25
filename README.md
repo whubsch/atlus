@@ -5,7 +5,7 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/atlus)
 ![Pepy Total Downlods](https://img.shields.io/pepy/dt/atlus)
 
-This Python project translates objects from the Overture maps schema to the OpenStreetMap (OSM) tagging scheme. The goal is to provide a seamless way to convert map data from Overture's format to a format that can be utilized within the OSM ecosystem. The package currently only supports Overture's `places` layer. You can improve the Overture categorization that this package uses by editing [the Overture categories page](https://wiki.openstreetmap.org/wiki/Overture_categories) on the OSM Wiki or submitting a pull request to the [tags.json](scripts/tags.json) file.
+This Python project translates raw address strings into the OpenStreetMap (OSM) tagging scheme. The package only supports US (and to some extent Canadian) addresses. You can try out the package without installing it at [the Atlus website](https://atlus.dev).
 
 > [!NOTE]
 > Use of this package does not absolve you from following OSM's [import guidelines](https://wiki.openstreetmap.org/wiki/Import/Guidelines).
@@ -19,16 +19,27 @@ This Python project translates objects from the Overture maps schema to the Open
 
 ## Features
 
-- Translate Overture map places to OSM tags.
-- Handle various map object types, including roads, buildings, and points of interest.
-- Ensure compatibility with OSM data structures and conventions.
+- Expand common street and name abbreviations.
+- Parse address parts correctly and reliably.
+- Get rid of address junk that is not needed for OpenStreetMap tagging.
+- Parse US and Canadian phone numbers into the standard format.
 
 ## Usage
 
-This package is meant to work with GeoJSON files containing Overture maps data, including those produced by the [overturemaps](https://pypi.org/project/overturemaps/) Python package.
+This package is meant to work with GeoJSON files containing raw address data, including those produced by the [All the Places](https://alltheplaces.xyz) project.
 
 ```console
-pip install atlus_py
+pip install atlus
+```
+
+```python
+>> import atlus
+>> atlus.abbrs("St. Francis")
+# "Saint Francis"
+>> atlus.process("789 Oak Dr, Smallville California, 98765")
+# {"addr:housenumber": "789", "addr:street": "Oak Drive:, "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
+>> atlus.phone_format("(202) 900-9019")
+# "+1 202-900-9019"
 ```
 
 ## Docs
@@ -41,6 +52,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE.txt) f
 
 ## See also
 
-- [Overture Maps](https://docs.overturemaps.org/schema/)
 - [OpenStreetMap](https://www.openstreetmap.org/)
-- [Overture categories wiki page](https://wiki.openstreetmap.org/wiki/Overture_categories)
+- [Atlus](https://wiki.openstreetmap.org/wiki/atlus)
+- [All the Places](https://wiki.openstreetmap.org/wiki/All_the_Places)
