@@ -1,10 +1,12 @@
 name: documentation
 
-# build the documentation whenever there are new commits on main
+# build the documentation on new tags on main
 on:
   push:
     branches:
       - main
+    tags:
+      - "*"
 
 # security: restrict permissions for CI jobs.
 permissions:
