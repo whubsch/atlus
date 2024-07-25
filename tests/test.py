@@ -203,35 +203,35 @@ def test_complex_data_types():
 
 def test_valid_phone_number_1():
     """Test cases for valid phone numbers"""
-    assert phone_format("2029009019") == "+1 202-900-9019"
-    assert phone_format("(202) 900-9019") == "+1 202-900-9019"
-    assert phone_format("202-900-9019") == "+1 202-900-9019"
-    assert phone_format("+1 202 900 9019") == "+1 202-900-9019"
-    assert phone_format("+1 (202) 900-9019") == "+1 202-900-9019"
+    assert get_phone("2029009019") == "+1 202-900-9019"
+    assert get_phone("(202) 900-9019") == "+1 202-900-9019"
+    assert get_phone("202-900-9019") == "+1 202-900-9019"
+    assert get_phone("+1 202 900 9019") == "+1 202-900-9019"
+    assert get_phone("+1 (202) 900-9019") == "+1 202-900-9019"
 
 
 def test_invalid_phone_number_1():
     """Test cases for invalid phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: 202-900-901"):
-        phone_format("202-900-901")
+        get_phone("202-900-901")
 
 
 def test_invalid_phone_number_2():
     """Test cases for invalid phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: abc-def-ghij"):
-        phone_format("abc-def-ghij")
+        get_phone("abc-def-ghij")
 
 
 def test_invalid_phone_number_3():
     """Test cases for invalid phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: 12345"):
-        phone_format("12345")
+        get_phone("12345")
 
 
 def test_invalid_phone_number_4():
     """Test cases for blank phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: "):
-        phone_format("")
+        get_phone("")
 
 
 # def test_cap_match():

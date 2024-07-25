@@ -36,9 +36,9 @@ pip install atlus
 >> import atlus
 >> atlus.abbrs("St. Francis")
 # "Saint Francis"
->> atlus.process("789 Oak Dr, Smallville California, 98765")
+>> atlus.get_address("789 Oak Dr, Smallville California, 98765")
 # {"addr:housenumber": "789", "addr:street": "Oak Drive:, "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
->> atlus.phone_format("(202) 900-9019")
+>> atlus.get_phone("(202) 900-9019")
 # "+1 202-900-9019"
 ```
 

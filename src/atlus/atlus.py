@@ -1,7 +1,7 @@
 """Functions and tools to process the raw address strings."""
 
 from collections import Counter
-from typing import OrderedDict
+from typing import OrderedDict, Union
 import usaddress
 import regex
 from .resources import (
@@ -316,7 +316,7 @@ def _combine_consecutive_tuples(
     return combined_list
 
 
-def _manual_join(parsed: list[tuple]) -> tuple[dict[str, str], list[str | None]]:
+def _manual_join(parsed: list[tuple]) -> tuple[dict[str, str], list[Union[str, None]]]:
     """Remove duplicates and join remaining fields."""
     a = [i for i in parsed if i[1] not in toss_tags]
     counts = Counter([i[1] for i in a])
@@ -324,7 +324,7 @@ def _manual_join(parsed: list[tuple]) -> tuple[dict[str, str], list[str | None]]
     ok_dict: dict[str, str] = {i[1]: i[0] for i in a if i[1] in ok_tags}
     removed = [osm_mapping.get(field) for field, count in counts.items() if count > 1]
 
-    new_dict: dict[str, str | None] = {}
+    new_dict: dict[str, Union[str, None]] = {}
     if "addr:street" not in removed:
         new_dict["addr:street"] = addr_street(ok_dict)
     if "addr:housenumber" not in removed:
@@ -360,15 +360,15 @@ def collapse_list(seq: list) -> list:
     return [x for x in seq if not (x in seen or seen_add(x))]
 
 
-def process(
+def get_address(
     address_string: str,
-) -> tuple[OrderedDict[str, str | int], list[str | None]]:
+) -> tuple[OrderedDict[str, Union[str, int]], list[Union[str, None]]]:
     """Process address strings.
 
     ```python
-    >> process("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")
+    >> get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")
     # {"addr:housenumber": "345", "addr:street": "Maple Road", "addr:city": "Countryside", "addr:state": "PA", "addr:postcode": "24680-0198"}
-    >> process("777 Strawberry St.")
+    >> get_address("777 Strawberry St.")
     # {"addr:housenumber": "777", "addr:street": "Strawberry Street",}
     ```
 
@@ -376,7 +376,7 @@ def process(
         address_string (str): The address string to process.
 
     Returns:
-        tuple[OrderedDict[str, str | int], list[str | None]]:
+        tuple[OrderedDict[str, Union[str, int]], list[Union[str, None]]]:
         The processed address string and the removed fields.
     """
     address_string = clean(address_string)
@@ -434,15 +434,15 @@ def process(
     return cleaned, removed
 
 
-def phone_format(phone: str) -> str:
+def get_phone(phone: str) -> str:
     """Format phone numbers to the US and Canadian standard format of `+1 XXX-XXX-XXXX`.
 
     ```python
-    >> phone_format("2029009019")
+    >> get_phone("2029009019")
     # "+1 202-900-9019"
-    >> phone_format("(202) 900-9019")
+    >> get_phone("(202) 900-9019")
     # "+1 202-900-9019"
-    >> phone_format("202-900-901")
+    >> get_phone("202-900-901")
     # ValueError: Invalid phone number: 202-900-901
     ```
 
