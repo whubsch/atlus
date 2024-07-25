@@ -22,7 +22,7 @@ toss_tags = [
     "USPSBoxType",
     "OccupancyType",
 ]
-"""Tags from the `usaddress` packageto remove."""
+"""Tags from the `usaddress` package to remove."""
 
 osm_mapping = {
     "AddressNumber": "addr:housenumber",
@@ -222,6 +222,15 @@ grid_comp = regex.compile(
 def abbrs(value: str) -> str:
     """Bundle most common abbreviation expansion functions.
 
+    ```python
+    >> abbrs("St. Francis")
+    # "Saint Francis"
+    >> abbrs("E St.")
+    # "E Street"
+    >> abbrs("E Sewell St")
+    # "East Sewell Street"
+    ```
+
     Args:
         value (str): String to expand.
 
@@ -386,6 +395,13 @@ def process(
     address_string: str,
 ) -> tuple[OrderedDict[str, str | int], list[str | None]]:
     """Process address strings.
+
+    ```python
+    >> process("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")
+    # {"addr:housenumber": "345", "addr:street": "Maple Road", "addr:city": "Countryside", "addr:state": "PA", "addr:postcode": "24680-0198"}
+    >> process("777 Strawberry St.")
+    # {"addr:housenumber": "777", "addr:street": "Strawberry Street",}
+    ```
 
     Args:
         address_string (str): The address string to process.
