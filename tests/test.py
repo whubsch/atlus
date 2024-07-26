@@ -201,6 +201,40 @@ def test_complex_data_types():
     assert collapse_list([1, "1", 1, "1"]) == [1, "1"]
 
 
+def test_get_address():
+    """Test cases for get address"""
+    assert get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")[0] == {
+        "addr:housenumber": "345",
+        "addr:street": "Maple Road",
+        "addr:city": "Countryside",
+        "addr:state": "PA",
+        "addr:postcode": "24680-0198",
+    }
+    assert get_address("777 Strawberry St.")[0] == {
+        "addr:housenumber": "777",
+        "addr:street": "Strawberry Street",
+    }
+
+
+def test_get_address_removed():
+    """Test cases for get address"""
+    add = get_address("222 NW Pineapple Ave Suite A Unit B, Beachville, SC 75309")
+    assert add[0] == {
+        "addr:housenumber": "222",
+        "addr:street": "Northwest Pineapple Avenue",
+        "addr:city": "Beachville",
+        "addr:state": "SC",
+        "addr:postcode": "75309",
+    }
+    assert add[1] == ["addr:unit"]
+    # add = get_address("158 S. Thomas Court 30008 90210")
+    # assert add[0] == {
+    #     "addr:housenumber": "158",
+    #     "addr:street": "South Thomas Court",
+    # }
+    # assert add[1] == ["addr:postcode"]
+
+
 def test_valid_phone_number_1():
     """Test cases for valid phone numbers"""
     assert get_phone("2029009019") == "+1 202-900-9019"
@@ -232,10 +266,3 @@ def test_invalid_phone_number_4():
     """Test cases for blank phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: "):
         get_phone("")
-
-
-# def test_cap_match():
-#     assert cap_match(regex.match("(\w+)", "test")) == "TEST"
-
-
-# Add more tests for other functions in the file

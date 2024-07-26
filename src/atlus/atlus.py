@@ -1,7 +1,7 @@
 """Functions and tools to process the raw address strings."""
 
 from collections import Counter
-from typing import OrderedDict, Union, List, Dict, Tuple
+from typing import Union, List, Dict, Tuple
 import usaddress
 import regex
 from .resources import (
@@ -362,21 +362,27 @@ def collapse_list(seq: list) -> list:
 
 def get_address(
     address_string: str,
-) -> Tuple[OrderedDict[str, Union[str, int]], List[Union[str, None]]]:
+) -> Tuple[Dict[str, Union[str, int]], List[Union[str, None]]]:
     """Process address strings.
 
     ```python
-    >> get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")
-    # {"addr:housenumber": "345", "addr:street": "Maple Road", "addr:city": "Countryside", "addr:state": "PA", "addr:postcode": "24680-0198"}
-    >> get_address("777 Strawberry St.")
-    # {"addr:housenumber": "777", "addr:street": "Strawberry Street",}
+    >> get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")[0]
+    # {"addr:housenumber": "345", "addr:street": "Maple Road",
+    "addr:city": "Countryside", "addr:state": "PA", "addr:postcode": "24680-0198"}
+    >> get_address("777 Strawberry St.")[0]
+    # {"addr:housenumber": "777", "addr:street": "Strawberry Street"}
+    >> address = get_address("222 NW Pineapple Ave Suite A Unit B")
+    >> address[0]
+    # {"addr:housenumber": "222", "addr:street": "Northwest Pineapple Avenue"}
+    >> address[1]
+    # ["addr:unit"]
     ```
 
     Args:
         address_string (str): The address string to process.
 
     Returns:
-        Tuple[OrderedDict[str, Union[str, int]], List[Union[str, None]]]:
+        Tuple[Dict[str, Union[str, int]], List[Union[str, None]]]:
         The processed address string and the removed fields.
     """
     address_string = clean(address_string)
@@ -431,7 +437,7 @@ def get_address(
             r"\1", cleaned["addr:postcode"]
         ).replace(" ", "-")
 
-    return cleaned, removed
+    return dict(cleaned), removed
 
 
 def get_phone(phone: str) -> str:
