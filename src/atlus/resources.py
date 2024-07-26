@@ -484,7 +484,7 @@ bad_zip_first_3 = [
 """Three-digit combinations that don't represent a zip code."""
 
 # pre-compile regex for speed
-ABBR_JOIN = "|".join(name_expand | street_expand)
+ABBR_JOIN = "|".join({**name_expand, **street_expand})
 abbr_join_comp = regex.compile(
     rf"(\b(?:{ABBR_JOIN})\b\.?)(?!')",
     flags=regex.IGNORECASE,
