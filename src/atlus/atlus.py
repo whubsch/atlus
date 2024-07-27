@@ -2,8 +2,11 @@
 
 from collections import Counter
 from typing import Union, List, Dict, Tuple
+from pydantic import ValidationError
 import usaddress
 import regex
+
+from .objects import Address
 from .resources import (
     street_expand,
     direction_expand,
@@ -55,11 +58,11 @@ def get_title(value: str, single_word: bool = False) -> str:
     """Fix ALL-CAPS string.
 
     ```python
-    >> get_title("PALM BEACH")
+    >>> get_title("PALM BEACH")
     # "Palm Beach"
-    >> get_title("BOSTON")
+    >>> get_title("BOSTON")
     # "BOSTON"
-    >> get_title("BOSTON", single_word=True)
+    >>> get_title("BOSTON", single_word=True)
     # "Boston"
     ```
 
@@ -79,7 +82,7 @@ def us_replace(value: str) -> str:
     """Fix string containing improperly formatted US.
 
     ```python
-    >> us_replace("U.S. Route 15")
+    >>> us_replace("U.S. Route 15")
     # "US Route 15"
     ```
 
@@ -96,7 +99,7 @@ def mc_replace(value: str) -> str:
     """Fix string containing improperly formatted Mc- prefix.
 
     ```python
-    >> mc_replace("Fort Mchenry")
+    >>> mc_replace("Fort Mchenry")
     # "Fort McHenry"
     ```
 
@@ -116,7 +119,7 @@ def ord_replace(value: str) -> str:
     """Fix string containing improperly capitalized ordinal.
 
     ```python
-    >> ord_replace("3Rd St. NW")
+    >>> ord_replace("3Rd St. NW")
     # "3rd St. NW"
     ```
 
@@ -192,11 +195,11 @@ def abbrs(value: str) -> str:
     """Bundle most common abbreviation expansion functions.
 
     ```python
-    >> abbrs("St. Francis")
+    >>> abbrs("St. Francis")
     # "Saint Francis"
-    >> abbrs("E St.")
+    >>> abbrs("E St.")
     # "E Street"
-    >> abbrs("E Sewell St")
+    >>> abbrs("E Sewell St")
     # "East Sewell Street"
     ```
 
@@ -345,7 +348,7 @@ def collapse_list(seq: list) -> list:
     """Remove duplicates in list while keeping order.
 
     ```python
-    >> collapse_list(["foo", "bar", "foo"])
+    >>> collapse_list(["foo", "bar", "foo"])
     # ["foo", "bar"]
     ```
 
@@ -366,15 +369,15 @@ def get_address(
     """Process address strings.
 
     ```python
-    >> get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")[0]
+    >>> get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")[0]
     # {"addr:housenumber": "345", "addr:street": "Maple Road",
     "addr:city": "Countryside", "addr:state": "PA", "addr:postcode": "24680-0198"}
-    >> get_address("777 Strawberry St.")[0]
+    >>> get_address("777 Strawberry St.")[0]
     # {"addr:housenumber": "777", "addr:street": "Strawberry Street"}
-    >> address = get_address("222 NW Pineapple Ave Suite A Unit B")
-    >> address[0]
+    >>> address = get_address("222 NW Pineapple Ave Suite A Unit B")
+    >>> address[0]
     # {"addr:housenumber": "222", "addr:street": "Northwest Pineapple Avenue"}
-    >> address[1]
+    >>> address[1]
     # ["addr:unit"]
     ```
 
@@ -437,18 +440,28 @@ def get_address(
             r"\1", cleaned["addr:postcode"]
         ).replace(" ", "-")
 
-    return dict(cleaned), removed
+    try:
+        validated: Address = Address.model_validate(dict(cleaned))
+    except ValidationError as e:
+        bad_fields: list = [each.get("loc", [])[0] for each in e.errors()]
+        cleaned_ret = dict(cleaned)
+        for each in bad_fields:
+            cleaned_ret.pop(each, None)
+
+        validated: Address = Address.model_validate(cleaned_ret)
+
+    return validated.model_dump(exclude_none=True, by_alias=True), removed
 
 
 def get_phone(phone: str) -> str:
     """Format phone numbers to the US and Canadian standard format of `+1 XXX-XXX-XXXX`.
 
     ```python
-    >> get_phone("2029009019")
+    >>> get_phone("2029009019")
     # "+1 202-900-9019"
-    >> get_phone("(202) 900-9019")
+    >>> get_phone("(202) 900-9019")
     # "+1 202-900-9019"
-    >> get_phone("202-900-901")
+    >>> get_phone("202-900-901")
     # ValueError: Invalid phone number: 202-900-901
     ```
 

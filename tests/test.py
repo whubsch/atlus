@@ -1,10 +1,14 @@
-# python3.12 -m pytest tests/*
+"""Test functions for the package."""
 
+# python3.12 -m pytest --cov=src --cov-report=html tests/*
+
+from pydantic import ValidationError
 import pytest
+from src.atlus.objects import Address
 from src.atlus.atlus import *
 
 
-def test_get_title():
+def test_get_title() -> None:
     """Test get_title function."""
     assert get_title("PALM BEACH") == "Palm Beach"
     assert get_title("BOSTON") == "BOSTON"
@@ -18,7 +22,7 @@ def test_get_title():
     assert get_title("MiXeD cAsE") == "MiXeD cAsE"  # No change expected
 
 
-def test_us_replace():
+def test_us_replace() -> None:
     """Test cases for us_replace"""
     assert us_replace("U.S. Route 15") == "US Route 15"
     assert us_replace("Traveling on U. S. Highway") == "Traveling on US Highway"
@@ -27,7 +31,7 @@ def test_us_replace():
     assert us_replace("United States") == "United States"  # No change expected
 
 
-def test_mc_replace():
+def test_mc_replace() -> None:
     """Test cases for mc_replace"""
     assert mc_replace("Fort Mchenry") == "Fort McHenry"
     assert mc_replace("Mcmaster is a great leader") == "McMaster is a great leader"
@@ -38,14 +42,14 @@ def test_mc_replace():
     )  # No change expected
 
 
-def test_ord_replace():
+def test_ord_replace() -> None:
     """Test cases for ord_replace"""
     assert ord_replace("December 4Th") == "December 4th"
     assert ord_replace("3Rd St. NW") == "3rd St. NW"
     assert ord_replace("1St of May") == "1st of May"
 
 
-def test_street_expand():
+def test_street_expand() -> None:
     """Test street cases for name_street_expand"""
     assert (
         abbr_join_comp.sub(
@@ -63,7 +67,7 @@ def test_street_expand():
     )
 
 
-def test_name_expand():
+def test_name_expand() -> None:
     """Test name cases for name_street_expand"""
 
     assert (
@@ -75,7 +79,7 @@ def test_name_expand():
     )
 
 
-def test_direct_expand():
+def test_direct_expand() -> None:
     """Test direct_expand function"""
     assert (
         dir_fill_comp.sub(
@@ -93,115 +97,115 @@ def test_direct_expand():
     )
 
 
-def test_replace_br_tags():
+def test_replace_br_tags() -> None:
     """Test cases to replace br tags"""
     assert clean("Hello<br/>World") == "Hello,World"
     assert clean("Hello<br />World") == "Hello,World"
 
 
-def test_remove_unicode():
+def test_remove_unicode() -> None:
     """Test cases for remove unicode"""
     assert clean("Hello\u2014World") == "HelloWorld"  # \u2014 is an em dash
     assert clean("Café") == "Caf"
 
 
-def test_ascii_only():
+def test_ascii_only() -> None:
     """Test cases for ascii only"""
     assert clean("Hello, World!") == "Hello, World!"
 
 
-def test_mixed_content():
+def test_mixed_content() -> None:
     """Test cases for mixed content"""
     assert clean("Hello<br/>World\u2014Café") == "Hello,WorldCaf"
 
 
-def test_empty_string():
+def test_empty_string() -> None:
     """Test cases for empty string"""
     assert clean("") == ""
 
 
-def test_basic_join():
+def test_basic_join() -> None:
     """Test cases for basic join"""
     tags = {"street": "Main St", "city": "Springfield", "zip": "12345"}
     keep = ["street", "city"]
     assert help_join(tags, keep) == "Main St Springfield"
 
 
-def test_keep_all():
+def test_keep_all() -> None:
     """Test cases for keep all"""
     tags = {"street": "Main St", "city": "Springfield", "zip": "12345"}
     keep = ["street", "city", "zip"]
     assert help_join(tags, keep) == "Main St Springfield 12345"
 
 
-def test_keep_none():
+def test_keep_none() -> None:
     """Test cases for keep none"""
     tags = {"street": "Main St", "city": "Springfield", "zip": "12345"}
     keep = []
     assert help_join(tags, keep) == ""
 
 
-def test_some_missing():
+def test_some_missing() -> None:
     """Test cases for some missing keys"""
     tags = {"street": "Main St", "city": "Springfield"}
     keep = ["street", "city", "zip"]
     assert help_join(tags, keep) == "Main St Springfield"
 
 
-def test_no_matching_keys():
+def test_no_matching_keys() -> None:
     """Test cases for no matching keys"""
     tags = {"street": "Main St", "city": "Springfield"}
     keep = ["zip"]
     assert help_join(tags, keep) == ""
 
 
-def test_empty_tags():
+def test_empty_tags() -> None:
     """Test cases for empty tags"""
     tags = {}
     keep = ["street", "city"]
     assert help_join(tags, keep) == ""
 
 
-def test_non_existent_keys():
+def test_non_existent_keys() -> None:
     """Test cases for non-existent keys"""
     tags = {"street": "Main St", "city": "Springfield", "zip": "12345"}
     keep = ["country", "state"]
     assert help_join(tags, keep) == ""
 
 
-def test_remove_duplicates():
+def test_remove_duplicates() -> None:
     """Test cases for remove duplicates"""
     assert collapse_list(["foo", "bar", "foo"]) == ["foo", "bar"]
 
 
-def test_no_duplicates():
+def test_no_duplicates() -> None:
     """Test cases for no duplicates"""
     assert collapse_list(["foo", "bar", "baz"]) == ["foo", "bar", "baz"]
 
 
-def test_empty_list():
+def test_empty_list() -> None:
     """Test cases for empty list"""
     assert collapse_list([]) == []
 
 
-def test_all_duplicates():
+def test_all_duplicates() -> None:
     """Test cases for all duplicates"""
     assert collapse_list(["foo", "foo", "foo"]) == ["foo"]
 
 
-def test_mixed_duplicates():
+def test_mixed_duplicates() -> None:
     """Test cases for mixed duplicates"""
     assert collapse_list(["foo", "bar", "baz", "foo", "bar"]) == ["foo", "bar", "baz"]
 
 
-def test_complex_data_types():
+def test_complex_data_types() -> None:
     """Test cases for complex data types"""
     assert collapse_list([1, 2, 1, 3, 4, 2, 5]) == [1, 2, 3, 4, 5]
     assert collapse_list([(1, 2), (1, 2), (2, 3)]) == [(1, 2), (2, 3)]
     assert collapse_list([1, "1", 1, "1"]) == [1, "1"]
 
 
-def test_get_address():
+def test_get_address() -> None:
     """Test cases for get address"""
     assert get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")[0] == {
         "addr:housenumber": "345",
@@ -216,9 +220,10 @@ def test_get_address():
     }
 
 
-def test_get_address_removed():
+def test_get_address_removed() -> None:
     """Test cases for get address"""
     add = get_address("222 NW Pineapple Ave Suite A Unit B, Beachville, SC 75309")
+    print(add)
     assert add[0] == {
         "addr:housenumber": "222",
         "addr:street": "Northwest Pineapple Avenue",
@@ -235,7 +240,7 @@ def test_get_address_removed():
     # assert add[1] == ["addr:postcode"]
 
 
-def test_valid_phone_number_1():
+def test_valid_phone_number_1() -> None:
     """Test cases for valid phone numbers"""
     assert get_phone("2029009019") == "+1 202-900-9019"
     assert get_phone("(202) 900-9019") == "+1 202-900-9019"
@@ -244,25 +249,119 @@ def test_valid_phone_number_1():
     assert get_phone("+1 (202) 900-9019") == "+1 202-900-9019"
 
 
-def test_invalid_phone_number_1():
+def test_invalid_phone_number_1() -> None:
     """Test cases for invalid phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: 202-900-901"):
         get_phone("202-900-901")
 
 
-def test_invalid_phone_number_2():
+def test_invalid_phone_number_2() -> None:
     """Test cases for invalid phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: abc-def-ghij"):
         get_phone("abc-def-ghij")
 
 
-def test_invalid_phone_number_3():
+def test_invalid_phone_number_3() -> None:
     """Test cases for invalid phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: 12345"):
         get_phone("12345")
 
 
-def test_invalid_phone_number_4():
+def test_invalid_phone_number_4() -> None:
     """Test cases for blank phone numbers"""
     with pytest.raises(ValueError, match="Invalid phone number: "):
         get_phone("")
+
+
+def test_address_creation_valid() -> None:
+    """Test successful creation with valid data"""
+    address = Address(
+        **{
+            "addr:housenumber": "1200-29",
+            "addr:street": "North Spring Street",
+            "addr:unit": "B",
+            "addr:city": "Los Angeles",
+            "addr:state": "CA",
+            "addr:postcode": "90012-4801",
+        }
+    )
+    assert address.addr_housenumber == "1200-29"
+    assert address.addr_street == "North Spring Street"
+    assert address.addr_unit == "B"
+    assert address.addr_city == "Los Angeles"
+    assert address.addr_state == "CA"
+    assert address.addr_postcode == "90012-4801"
+
+
+def test_address_creation_invalid_state() -> None:
+    """Test creation with invalid state (too short)"""
+    with pytest.raises(ValidationError):
+        Address(
+            **{
+                "addr:housenumber": "1200-29",
+                "addr:street": "North Spring Street",
+                "addr:unit": "B",
+                "addr:city": "Los Angeles",
+                "addr:state": "C",  # Invalid state
+                "addr:postcode": "90012-4801",
+            }
+        )
+
+    # Test creation with invalid state (too long)
+    with pytest.raises(ValidationError):
+        Address(
+            **{
+                "addr:housenumber": "1200-29",
+                "addr:street": "North Spring Street",
+                "addr:unit": "B",
+                "addr:city": "Los Angeles",
+                "addr:state": "CAL",  # Invalid state
+                "addr:postcode": "90012-4801",
+            }
+        )
+
+
+def test_address_creation_invalid_postcode() -> None:
+    """Test creation with invalid postcode"""
+    with pytest.raises(ValidationError):
+        Address(
+            **{
+                "addr:housenumber": "1200-29",
+                "addr:street": "North Spring Street",
+                "addr:unit": "B",
+                "addr:city": "Los Angeles",
+                "addr:state": "CA",
+                "addr:postcode": "9001",  # Invalid postcode
+            }
+        )
+
+
+def test_address_creation_optional_fields() -> None:
+    """Test creation with optional fields missing"""
+    address = Address(**{"addr:housenumber": 200, "addr:street": "North Spring Street"})
+    assert address.addr_housenumber == 200
+    assert address.addr_street == "North Spring Street"
+    assert address.addr_unit is None
+    assert address.addr_city is None
+    assert address.addr_state is None
+    assert address.addr_postcode is None
+
+
+def test_address_alias_handling() -> None:
+    """Test creation with aliases"""
+    address = Address(
+        **{
+            "addr:housenumber": 200,
+            "addr:street": "North Spring Street",
+            "addr:unit": "B",
+            "addr:city": "Los Angeles",
+            "addr:state": "CA",
+            "addr:postcode": "90012",
+        }
+    )
+    assert address.addr_housenumber == 200
+    assert address.addr_street == "North Spring Street"
+    assert address.addr_unit == "B"
+    assert address.addr_city == "Los Angeles"
+    assert address.addr_state == "CA"
+    assert address.addr_postcode == "90012"

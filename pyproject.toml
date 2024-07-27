@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "atlus"
 dynamic = ["version"]
-description = 'Translate the Overture maps schema to OpenStreetMap tags.'
+description = 'Translate raw address strings into the OSM tagging scheme.'
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
-keywords = ["overture", "osm", "openstreetmap", "mapping", "overture maps"]
+keywords = ["osm", "openstreetmap", "mapping", "address", "geocoding"]
 authors = [{ name = "Will", email = "wahubsch@gmail.com" }]
 classifiers = [
   "Development Status :: 4 - Beta",

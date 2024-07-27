@@ -1,4 +1,4 @@
-# Overture to OSM
+# Atlus
 
 ![GitHub License](https://img.shields.io/github/license/whubsch/atlus_py)
 ![GitHub last commit](https://img.shields.io/github/last-commit/whubsch/atlus_py)
@@ -26,19 +26,19 @@ This Python project translates raw address strings into the OpenStreetMap (OSM) 
 
 ## Usage
 
-This package is meant to work with GeoJSON files containing raw address data, including those produced by the [All the Places](https://alltheplaces.xyz) project.
+This package is meant to work with GeoJSON files containing raw address data, including those produced by the [All the Places](https://alltheplaces.xyz) project or [Overture maps](https://wiki.openstreetmap.org/wiki/Overture).
 
 ```console
 pip install atlus
 ```
 
 ```python
->> import atlus
->> atlus.abbrs("St. Francis")
+>>> import atlus
+>>> atlus.abbrs("St. Francis")
 # "Saint Francis"
->> atlus.get_address("789 Oak Dr, Smallville California, 98765")
-# {"addr:housenumber": "789", "addr:street": "Oak Drive:, "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
->> atlus.get_phone("(202) 900-9019")
+>>> atlus.get_address("789 Oak Dr, Smallville California, 98765")
+# {"addr:housenumber": "789", "addr:street": "Oak Drive", "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
+>>> atlus.get_phone("(202) 900-9019")
 # "+1 202-900-9019"
 ```
 
