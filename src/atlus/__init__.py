@@ -25,7 +25,7 @@ from .atlus import (
     mc_replace,
     us_replace,
     ord_replace,
-    clean,
+    remove_br_unicode,
 )
 from . import atlus
 from . import resources
@@ -38,7 +38,7 @@ __all__ = [
     "mc_replace",
     "us_replace",
     "ord_replace",
-    "clean",
+    "remove_br_unicode",
     "atlus",
     "resources",
 ]

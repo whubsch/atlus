@@ -252,7 +252,7 @@ def abbrs(value: str) -> str:
     return value.strip(" .")
 
 
-def clean(old: str) -> str:
+def remove_br_unicode(old: str) -> str:
     """Clean the input string before sending to parser by removing newlines and unicode.
 
     Args:
@@ -263,6 +263,22 @@ def clean(old: str) -> str:
     """
     old = regex.sub(r"<br ?/>", ",", old)
     return regex.sub(r"[^\x00-\x7F\n\r\t]", "", old)  # remove unicode
+
+
+def clean_address(address_string: str) -> str:
+    """Clean the input string before sending to parser by removing newlines and unicode.
+
+    Args:
+        address_string (str): String to clean.
+
+    Returns:
+        str: Cleaned string.
+    """
+    address_string = usa_comp.sub(
+        "", remove_br_unicode(address_string).replace("  ", " ").strip(" ,.")
+    )
+    address_string = paren_comp.sub("", address_string)
+    return grid_comp.sub(grid_match, address_string)
 
 
 def help_join(tags, keep: List[str]) -> str:
@@ -318,10 +334,10 @@ def _combine_consecutive_tuples(
 
 def _manual_join(parsed: List[tuple]) -> Tuple[Dict[str, str], List[Union[str, None]]]:
     """Remove duplicates and join remaining fields."""
-    a = [i for i in parsed if i[1] not in toss_tags]
-    counts = Counter([i[1] for i in a])
+    parsed_clean = [i for i in parsed if i[1] not in toss_tags]
+    counts = Counter([i[1] for i in parsed_clean])
     ok_tags = [tag for tag, count in counts.items() if count == 1]
-    ok_dict: Dict[str, str] = {i[1]: i[0] for i in a if i[1] in ok_tags}
+    ok_dict: Dict[str, str] = {i[1]: i[0] for i in parsed_clean if i[1] in ok_tags}
     removed = [osm_mapping.get(field) for field, count in counts.items() if count > 1]
 
     new_dict: Dict[str, Union[str, None]] = {}
@@ -360,6 +376,35 @@ def collapse_list(seq: list) -> list:
     return [x for x in seq if not (x in seen or seen_add(x))]
 
 
+def split_unit(address_string: str) -> Dict[str, str]:
+    """Split unit from address string, if present."""
+    address_string = address_string.strip(" ")
+    if not any(char.isalpha() for char in address_string):
+        return {"addr:housenumber": address_string}
+
+    add_dict = {}
+    number = ""
+    for char in address_string:
+        if char.isdigit():
+            number += char
+        else:
+            break
+
+    unit = remove_prefix(address_string, number).lstrip(" -,/")
+    if unit:
+        add_dict["addr:unit"] = unit
+    add_dict["addr:housenumber"] = number
+
+    return add_dict
+
+
+def remove_prefix(text: str, prefix: str) -> str:
+    """Remove prefix from string for Python 3.8."""
+    if text.startswith(prefix):
+        return text[len(prefix) :]
+    return text
+
+
 def get_address(
     address_string: str,
 ) -> Tuple[Dict[str, Union[str, int]], List[Union[str, None]]]:
@@ -385,31 +430,22 @@ def get_address(
         Tuple[Dict[str, Union[str, int]], List[Union[str, None]]]:
         The processed address string and the removed fields.
     """
-    address_string = clean(address_string)
-    address_string = address_string.replace("  ", " ").strip(" ,.")
-    address_string = usa_comp.sub("", address_string)
-    address_string = paren_comp.sub("", address_string)
-    address_string = grid_comp.sub(grid_match, address_string)
     try:
-        cleaned = usaddress.tag(clean(address_string), tag_mapping=osm_mapping)[0]
+        cleaned = usaddress.tag(clean_address(address_string), tag_mapping=osm_mapping)[
+            0
+        ]
         removed = []
-    except usaddress.RepeatedLabelError as e:
-        collapsed = collapse_list([(i[0].strip(" .,#"), i[1]) for i in e.parsed_string])
+    except usaddress.RepeatedLabelError as err:
+        collapsed = collapse_list(
+            [(i[0].strip(" .,#"), i[1]) for i in err.parsed_string]
+        )
         cleaned, removed = _manual_join(_combine_consecutive_tuples(collapsed))
 
     for toss in toss_tags:
         cleaned.pop(toss, None)
 
     if "addr:housenumber" in cleaned:
-        suite = regex.match(r"([0-9]+)[- \/]?([a-zA-Z]+)", cleaned["addr:housenumber"])
-        if suite:
-            cleaned["addr:housenumber"] = suite.group(1)
-            if "addr:unit" not in cleaned:
-                cleaned["addr:unit"] = suite.group(2).upper()
-            else:
-                if cleaned["addr:unit"] != suite.group(2).upper():
-                    cleaned.pop("addr:unit")
-                    removed += ["addr:unit"]
+        cleaned = {**cleaned, **split_unit(cleaned["addr:housenumber"])}
 
     if "addr:street" in cleaned:
         street = abbrs(cleaned["addr:street"])
@@ -439,8 +475,8 @@ def get_address(
 
     try:
         validated: Address = Address.model_validate(dict(cleaned))
-    except ValidationError as e:
-        bad_fields: list = [each.get("loc", [])[0] for each in e.errors()]
+    except ValidationError as err:
+        bad_fields: list = [each.get("loc", [])[0] for each in err.errors()]
         cleaned_ret = dict(cleaned)
         for each in bad_fields:
             cleaned_ret.pop(each, None)
