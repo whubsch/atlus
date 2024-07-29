@@ -109,10 +109,11 @@ def mc_replace(value: str) -> str:
     Returns:
         str: Fixed string.
     """
-    mc_match = regex.search(r"(.*\bMc)([a-z])(.*)", value)
-    if mc_match:
-        return mc_match.group(1) + mc_match.group(2).title() + mc_match.group(3)
-    return value
+    words = []
+    for word in value.split():
+        mc_match = word.partition("Mc")
+        words.append(mc_match[0] + mc_match[1] + mc_match[2].capitalize())
+    return " ".join(words)
 
 
 def ord_replace(value: str) -> str:
@@ -230,11 +231,7 @@ def abbrs(value: str) -> str:
     )
 
     # normalize 'US'
-    value = regex.sub(
-        r"\bU.[Ss].\B",
-        cap_match,
-        value,
-    )
+    value = us_replace(value)
 
     # uppercase shortened street descriptors
     value = regex.sub(
@@ -448,6 +445,7 @@ def get_address(
         for each in bad_fields:
             cleaned_ret.pop(each, None)
 
+        removed.extend(bad_fields)
         validated: Address = Address.model_validate(cleaned_ret)
 
     return validated.model_dump(exclude_none=True, by_alias=True), removed

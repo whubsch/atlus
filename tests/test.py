@@ -37,6 +37,7 @@ def test_mc_replace() -> None:
     assert mc_replace("Mcmaster is a great leader") == "McMaster is a great leader"
     assert mc_replace("Mcdonald's is popular") == "McDonald's is popular"
     assert mc_replace("I like the Mcflurry") == "I like the McFlurry"
+    assert mc_replace("Mcflurry Mcmansion") == "McFlurry McMansion"
     assert (
         mc_replace("No Mc in this string") == "No Mc in this string"
     )  # No change expected
@@ -220,24 +221,29 @@ def test_get_address() -> None:
     }
 
 
-def test_get_address_removed() -> None:
+def test_get_address_removed_unit() -> None:
     """Test cases for get address"""
-    add = get_address("222 NW Pineapple Ave Suite A Unit B, Beachville, SC 75309")
-    print(add)
-    assert add[0] == {
+    add, removed = get_address(
+        "222 NW Pineapple Ave Suite A Unit B, Beachville, SC 75309"
+    )
+    assert add == {
         "addr:housenumber": "222",
         "addr:street": "Northwest Pineapple Avenue",
         "addr:city": "Beachville",
         "addr:state": "SC",
         "addr:postcode": "75309",
     }
-    assert add[1] == ["addr:unit"]
-    # add = get_address("158 S. Thomas Court 30008 90210")
-    # assert add[0] == {
-    #     "addr:housenumber": "158",
-    #     "addr:street": "South Thomas Court",
-    # }
-    # assert add[1] == ["addr:postcode"]
+    assert removed == ["addr:unit"]
+
+
+def test_get_address_removed_postcode() -> None:
+    """Test cases for get address"""
+    add, removed = get_address("158 S. Thomas Court 30008 90210")
+    assert add == {
+        "addr:housenumber": "158",
+        "addr:street": "South Thomas Court",
+    }
+    assert removed == ["addr:postcode"]
 
 
 def test_valid_phone_number_1() -> None:
