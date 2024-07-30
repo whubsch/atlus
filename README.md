@@ -35,16 +35,16 @@ pip install atlus
 ```python
 >>> import atlus
 >>> atlus.abbrs("St. Francis")
-# "Saint Francis"
+"Saint Francis"
 >>> atlus.get_address("789 Oak Dr, Smallville California, 98765")
-# {"addr:housenumber": "789", "addr:street": "Oak Drive", "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
+{"addr:housenumber": "789", "addr:street": "Oak Drive", "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
 >>> atlus.get_phone("(202) 900-9019")
-# "+1 202-900-9019"
+"+1 202-900-9019"
 ```
 
 ## Docs
 
-The documentation for our package is available online at our [pdoc page](https://whubsch.github.io/atlus_py/index.html). We would greatly appreciate your contributions to help improve the auto-generated docs; please submit any updates or corrections via pull requests.
+The documentation for our package is available online at our [documentation page](https://whubsch.github.io/atlus_py/index.html). We would greatly appreciate your contributions to help improve the auto-generated docs; please submit any updates or corrections via pull requests.
 
 ## License
 

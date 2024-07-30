@@ -59,11 +59,11 @@ def get_title(value: str, single_word: bool = False) -> str:
 
     ```python
     >>> get_title("PALM BEACH")
-    # "Palm Beach"
+    "Palm Beach"
     >>> get_title("BOSTON")
-    # "BOSTON"
+    "BOSTON"
     >>> get_title("BOSTON", single_word=True)
-    # "Boston"
+    "Boston"
     ```
 
     Args:
@@ -83,7 +83,7 @@ def us_replace(value: str) -> str:
 
     ```python
     >>> us_replace("U.S. Route 15")
-    # "US Route 15"
+    "US Route 15"
     ```
 
     Args:
@@ -100,7 +100,7 @@ def mc_replace(value: str) -> str:
 
     ```python
     >>> mc_replace("Fort Mchenry")
-    # "Fort McHenry"
+    "Fort McHenry"
     ```
 
     Args:
@@ -121,7 +121,7 @@ def ord_replace(value: str) -> str:
 
     ```python
     >>> ord_replace("3Rd St. NW")
-    # "3rd St. NW"
+    "3rd St. NW"
     ```
 
     Args:
@@ -197,11 +197,11 @@ def abbrs(value: str) -> str:
 
     ```python
     >>> abbrs("St. Francis")
-    # "Saint Francis"
+    "Saint Francis"
     >>> abbrs("E St.")
-    # "E Street"
+    "E Street"
     >>> abbrs("E Sewell St")
-    # "East Sewell Street"
+    "East Sewell Street"
     ```
 
     Args:
@@ -362,7 +362,7 @@ def collapse_list(seq: list) -> list:
 
     ```python
     >>> collapse_list(["foo", "bar", "foo"])
-    # ["foo", "bar"]
+    ["foo", "bar"]
     ```
 
     Args:
@@ -412,15 +412,15 @@ def get_address(
 
     ```python
     >>> get_address("345 MAPLE RD, COUNTRYSIDE, PA 24680-0198")[0]
-    # {"addr:housenumber": "345", "addr:street": "Maple Road",
+    {"addr:housenumber": "345", "addr:street": "Maple Road",
     "addr:city": "Countryside", "addr:state": "PA", "addr:postcode": "24680-0198"}
     >>> get_address("777 Strawberry St.")[0]
-    # {"addr:housenumber": "777", "addr:street": "Strawberry Street"}
+    {"addr:housenumber": "777", "addr:street": "Strawberry Street"}
     >>> address = get_address("222 NW Pineapple Ave Suite A Unit B")
     >>> address[0]
-    # {"addr:housenumber": "222", "addr:street": "Northwest Pineapple Avenue"}
+    {"addr:housenumber": "222", "addr:street": "Northwest Pineapple Avenue"}
     >>> address[1]
-    # ["addr:unit"]
+    ["addr:unit"]
     ```
 
     Args:
@@ -492,11 +492,11 @@ def get_phone(phone: str) -> str:
 
     ```python
     >>> get_phone("2029009019")
-    # "+1 202-900-9019"
+    "+1 202-900-9019"
     >>> get_phone("(202) 900-9019")
-    # "+1 202-900-9019"
+    "+1 202-900-9019"
     >>> get_phone("202-900-901")
-    # ValueError: Invalid phone number: 202-900-901
+    ValueError: Invalid phone number: 202-900-901
     ```
 
     Args:
