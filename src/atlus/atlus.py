@@ -407,7 +407,7 @@ def remove_prefix(text: str, prefix: str) -> str:
 
 def get_address(
     address_string: str,
-) -> Tuple[Dict[str, Union[str, int]], List[Union[str, None]]]:
+) -> Tuple[Dict[str, str], List[Union[str, None]]]:
     """Process address strings.
 
     ```python
@@ -427,7 +427,7 @@ def get_address(
         address_string (str): The address string to process.
 
     Returns:
-        Tuple[Dict[str, Union[str, int]], List[Union[str, None]]]:
+        Tuple[Dict[str, str], List[Union[str, None]]]:
         The processed address string and the removed fields.
     """
     try:

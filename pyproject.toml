@@ -28,9 +28,9 @@ classifiers = [
 dependencies = ["usaddress", "regex"]
 
 [project.urls]
-Documentation = "https://whubsch.github.io/atlus_py/index.html"
-Issues = "https://github.com/whubsch/atlus_py/issues"
-Source = "https://github.com/whubsch/atlus_py"
+Documentation = "https://whubsch.github.io/atlus/index.html"
+Issues = "https://github.com/whubsch/atlus/issues"
+Source = "https://github.com/whubsch/atlus"
 
 [tool.hatch.version]
 path = "src/atlus/__about__.py"
@@ -47,7 +47,7 @@ parallel = true
 omit = ["src/atlus/__about__.py"]
 
 [tool.coverage.paths]
-atlus_py = ["src/atlus", "*/atlus_py/src/atlus"]
+atlus = ["src/atlus", "*/atlus/src/atlus"]
 tests = ["tests", "*/atlus/tests"]
 
 [tool.coverage.report]

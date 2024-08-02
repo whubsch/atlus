@@ -1,7 +1,7 @@
 # Atlus
 
-![GitHub License](https://img.shields.io/github/license/whubsch/atlus_py)
-![GitHub last commit](https://img.shields.io/github/last-commit/whubsch/atlus_py)
+![GitHub License](https://img.shields.io/github/license/whubsch/atlus)
+![GitHub last commit](https://img.shields.io/github/last-commit/whubsch/atlus)
 ![PyPI - Version](https://img.shields.io/pypi/v/atlus)
 ![Pepy Total Downlods](https://img.shields.io/pepy/dt/atlus)
 
@@ -44,7 +44,7 @@ pip install atlus
 
 ## Docs
 
-The documentation for our package is available online at our [documentation page](https://whubsch.github.io/atlus_py/index.html). We would greatly appreciate your contributions to help improve the auto-generated docs; please submit any updates or corrections via pull requests.
+The documentation for our package is available online at our [documentation page](https://whubsch.github.io/atlus/index.html). We would greatly appreciate your contributions to help improve the auto-generated docs; please submit any updates or corrections via pull requests.
 
 ## License
 
