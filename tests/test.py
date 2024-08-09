@@ -53,49 +53,22 @@ def test_ord_replace() -> None:
 def test_street_expand() -> None:
     """Test street cases for name_street_expand"""
     assert (
-        abbr_join_comp.sub(
-            name_street_expand,
-            "Hollywood Blvd",
-        )
+        abbr_join_comp.sub(name_street_expand, "Hollywood Blvd")
         == "Hollywood Boulevard"
     )
-    assert (
-        abbr_join_comp.sub(
-            name_street_expand,
-            "Homer Dr.",
-        )
-        == "Homer Drive"
-    )
+    assert abbr_join_comp.sub(name_street_expand, "Homer Dr.") == "Homer Drive"
 
 
 def test_name_expand() -> None:
     """Test name cases for name_street_expand"""
 
-    assert (
-        abbr_join_comp.sub(
-            name_street_expand,
-            "Intl Dr.",
-        )
-        == "International Drive"
-    )
+    assert abbr_join_comp.sub(name_street_expand, "Intl Dr.") == "International Drive"
 
 
 def test_direct_expand() -> None:
     """Test direct_expand function"""
-    assert (
-        dir_fill_comp.sub(
-            direct_expand,
-            "N",
-        )
-        == "North"
-    )
-    assert (
-        dir_fill_comp.sub(
-            direct_expand,
-            "N Hyatt Rd.",
-        )
-        == "North Hyatt Rd."
-    )
+    assert dir_fill_comp.sub(direct_expand, "N") == "North"
+    assert dir_fill_comp.sub(direct_expand, "N Hyatt Rd.") == "North Hyatt Rd."
 
 
 def test_replace_br_tags() -> None:
@@ -208,40 +181,21 @@ def test_complex_data_types() -> None:
 
 def test_split_unit():
     """Test cases for split_unit"""
-    assert split_unit("123A") == {
-        "addr:housenumber": "123",
-        "addr:unit": "A",
-    }
+    assert split_unit("123A") == {"addr:housenumber": "123", "addr:unit": "A"}
 
     assert split_unit("456") == {"addr:housenumber": "456"}
 
-    assert split_unit("  789  ") == {
-        "addr:housenumber": "789",
-    }
+    assert split_unit("  789  ") == {"addr:housenumber": "789"}
 
-    assert split_unit("123-45") == {
-        "addr:housenumber": "123-45",
-    }
+    assert split_unit("123-45") == {"addr:housenumber": "123-45"}
 
-    assert split_unit("987-B") == {
-        "addr:housenumber": "987",
-        "addr:unit": "B",
-    }
+    assert split_unit("987-B") == {"addr:housenumber": "987", "addr:unit": "B"}
 
-    assert split_unit("987/B") == {
-        "addr:housenumber": "987",
-        "addr:unit": "B",
-    }
+    assert split_unit("987/B") == {"addr:housenumber": "987", "addr:unit": "B"}
 
-    assert split_unit("987 B") == {
-        "addr:housenumber": "987",
-        "addr:unit": "B",
-    }
+    assert split_unit("987 B") == {"addr:housenumber": "987", "addr:unit": "B"}
 
-    assert split_unit("987 B2") == {
-        "addr:housenumber": "987",
-        "addr:unit": "B2",
-    }
+    assert split_unit("987 B2") == {"addr:housenumber": "987", "addr:unit": "B2"}
 
     assert split_unit("") == {"addr:housenumber": ""}
 
@@ -291,10 +245,7 @@ def test_get_address_removed_unit() -> None:
 def test_get_address_removed_postcode() -> None:
     """Test cases for get address"""
     add, removed = get_address("158 S. Thomas Court 30008 90210")
-    assert add == {
-        "addr:housenumber": "158",
-        "addr:street": "South Thomas Court",
-    }
+    assert add == {"addr:housenumber": "158", "addr:street": "South Thomas Court"}
     assert removed == ["addr:postcode"]
 
 

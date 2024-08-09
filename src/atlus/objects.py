@@ -1,6 +1,7 @@
 """Define objects for parsing fields."""
 
-from typing import Union, Optional
+from typing import Optional, Union
+
 from pydantic import BaseModel, Field
 
 

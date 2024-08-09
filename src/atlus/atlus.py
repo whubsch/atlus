@@ -1,26 +1,27 @@
 """Functions and tools to process the raw address strings."""
 
 from collections import Counter
-from typing import Union, List, Dict, Tuple
-from pydantic import ValidationError
-import usaddress
+from typing import Dict, List, Tuple, Union
+
 import regex
+import usaddress
+from pydantic import ValidationError
 
 from .objects import Address
 from .resources import (
-    street_expand,
-    direction_expand,
-    name_expand,
-    state_expand,
-    saint_comp,
     abbr_join_comp,
     dir_fill_comp,
-    sr_comp,
-    usa_comp,
-    paren_comp,
+    direction_expand,
     grid_comp,
+    name_expand,
+    paren_comp,
     post_comp,
+    saint_comp,
+    sr_comp,
+    state_expand,
     street_comp,
+    street_expand,
+    usa_comp,
 )
 
 toss_tags = [
@@ -179,7 +180,7 @@ def lower_match(match: regex.Match) -> str:
     """Lower-case improperly cased ordinal values.
 
     Args:
-        value: String to fix.
+        match: String to fix.
 
     Returns:
         str: Fixed string.
@@ -213,39 +214,22 @@ def abbrs(value: str) -> str:
     value = ord_replace(us_replace(mc_replace(get_title(value))))
 
     # change likely 'St' to 'Saint'
-    value = saint_comp.sub(
-        "Saint",
-        value,
-    )
+    value = saint_comp.sub("Saint", value)
 
     # expand common street and word abbreviations
-    value = abbr_join_comp.sub(
-        name_street_expand,
-        value,
-    )
+    value = abbr_join_comp.sub(name_street_expand, value)
 
     # expand directionals
-    value = dir_fill_comp.sub(
-        direct_expand,
-        value,
-    )
+    value = dir_fill_comp.sub(direct_expand, value)
 
     # normalize 'US'
     value = us_replace(value)
 
     # uppercase shortened street descriptors
-    value = regex.sub(
-        r"\b(C[rh]|S[rh]|[FR]m|Us)\b",
-        cap_match,
-        value,
-    )
+    value = regex.sub(r"\b(C[rh]|S[rh]|[FR]m|Us)\b", cap_match, value)
 
     # remove unremoved abbr periods
-    value = regex.sub(
-        r"([a-zA-Z]{2,})\.",
-        r"\1",
-        value,
-    )
+    value = regex.sub(r"([a-zA-Z]{2,})\.", r"\1", value)
 
     # expand 'SR' if no other street types
     value = sr_comp.sub("State Route", value)
@@ -311,7 +295,7 @@ def addr_housenumber(tags: Dict[str, str]) -> str:
 
 
 def _combine_consecutive_tuples(
-    tuples_list: List[Tuple[str, str]]
+    tuples_list: List[Tuple[str, str]],
 ) -> List[Tuple[str, str]]:
     """Join adjacent `usaddress` fields."""
     combined_list = []
@@ -405,9 +389,7 @@ def remove_prefix(text: str, prefix: str) -> str:
     return text
 
 
-def get_address(
-    address_string: str,
-) -> Tuple[Dict[str, str], List[Union[str, None]]]:
+def get_address(address_string: str) -> Tuple[Dict[str, str], List[Union[str, None]]]:
     """Process address strings.
 
     ```python
@@ -449,10 +431,7 @@ def get_address(
 
     if "addr:street" in cleaned:
         street = abbrs(cleaned["addr:street"])
-        cleaned["addr:street"] = street_comp.sub(
-            "Street",
-            street,
-        ).strip(".")
+        cleaned["addr:street"] = street_comp.sub("Street", street).strip(".")
 
     if "addr:city" in cleaned:
         cleaned["addr:city"] = abbrs(get_title(cleaned["addr:city"], single_word=True))
@@ -509,8 +488,7 @@ def get_phone(phone: str) -> str:
         ValueError: If the phone number is invalid.
     """
     phone_valid = regex.search(
-        r"^\(?(?:\+? ?1?[ -.]*)?(?:\(?(\d{3})\)?[ -.]*)(\d{3})[ -.]*(\d{4})$",
-        phone,
+        r"^\(?(?:\+? ?1?[ -.]*)?(?:\(?(\d{3})\)?[ -.]*)(\d{3})[ -.]*(\d{4})$", phone
     )
     if phone_valid:
         return (

@@ -12,20 +12,20 @@ license = "MIT"
 keywords = ["osm", "openstreetmap", "mapping", "address", "geocoding"]
 authors = [{ name = "Will", email = "wahubsch@gmail.com" }]
 classifiers = [
-  "Development Status :: 4 - Beta",
-  "Programming Language :: Python",
-  "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
-  "License :: OSI Approved :: MIT License",
-  "Typing :: Typed",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "License :: OSI Approved :: MIT License",
+    "Typing :: Typed",
 ]
-dependencies = ["usaddress", "regex"]
+dependencies = ["usaddress>0.5.10", "regex>2024.4.16"]
 
 [project.urls]
 Documentation = "https://whubsch.github.io/atlus/index.html"
@@ -52,3 +52,16 @@ tests = ["tests", "*/atlus/tests"]
 
 [tool.coverage.report]
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+
+[tool.ruff]
+fix = true
+
+[tool.ruff.lint]
+select = ["D", "E", "F", "I"]
+pydocstyle.convention = "google"
+exclude = ["tests/*", "scripts/*"]
+isort.split-on-trailing-comma = false
+
+[tool.ruff.format]
+docstring-code-format = true
+skip-magic-trailing-comma = true

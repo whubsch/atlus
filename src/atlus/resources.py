@@ -486,24 +486,20 @@ bad_zip_first_3 = [
 # pre-compile regex for speed
 ABBR_JOIN = "|".join({**name_expand, **street_expand})
 abbr_join_comp = regex.compile(
-    rf"(\b(?:{ABBR_JOIN})\b\.?)(?!')",
-    flags=regex.IGNORECASE,
+    rf"(\b(?:{ABBR_JOIN})\b\.?)(?!')", flags=regex.IGNORECASE
 )
 
 DIR_FILL = "|".join(r"\.?".join(list(abbr)) for abbr in direction_expand)
+st_ave = r" (?:Street|Avenue)"
 dir_fill_comp = regex.compile(
-    rf"(?<!(?:^(?:Avenue) |[\.']))(\b(?:{DIR_FILL})\b\.?)(?!(?:\.?[a-zA-Z]| (?:Street|Avenue)))",
+    rf"(?<!(?:^(?:Avenue) |[\.']))(\b(?:{DIR_FILL})\b\.?)(?!(?:\.?[a-zA-Z]|{st_ave}))",
     flags=regex.IGNORECASE,
 )
 
-sr_comp = regex.compile(
-    r"(\bS\.?R\b\.?)(?= \d+)",
-    flags=regex.IGNORECASE,
-)
+sr_comp = regex.compile(r"(\bS\.?R\b\.?)(?= \d+)", flags=regex.IGNORECASE)
 
 saint_comp = regex.compile(
-    rf"^(St\.?)(?= )|(\bSt\.?)(?= (?:{'|'.join(saints)}))",
-    flags=regex.IGNORECASE,
+    rf"^(St\.?)(?= )|(\bSt\.?)(?= (?:{'|'.join(saints)}))", flags=regex.IGNORECASE
 )
 
 street_comp = regex.compile(
