@@ -265,13 +265,13 @@ def clean_address(address_string: str) -> str:
     return grid_comp.sub(grid_match, address_string)
 
 
-def help_join(tags, keep: List[str]) -> str:
+def help_join(tags, keep: list[str]) -> str:
     """Help to join address fields."""
-    tag_join: List[str] = [v for k, v in tags.items() if k in keep]
+    tag_join: list[str] = [v for k, v in tags.items() if k in keep]
     return " ".join(tag_join)
 
 
-def addr_street(tags: Dict[str, str]) -> str:
+def addr_street(tags: dict[str, str]) -> str:
     """Build the street field."""
     return help_join(
         tags,
@@ -287,7 +287,7 @@ def addr_street(tags: Dict[str, str]) -> str:
     )
 
 
-def addr_housenumber(tags: Dict[str, str]) -> str:
+def addr_housenumber(tags: dict[str, str]) -> str:
     """Build the housenumber field."""
     return help_join(
         tags, ["AddressNumberPrefix", "AddressNumber", "AddressNumberSuffix"]
@@ -295,8 +295,8 @@ def addr_housenumber(tags: Dict[str, str]) -> str:
 
 
 def _combine_consecutive_tuples(
-    tuples_list: List[Tuple[str, str]],
-) -> List[Tuple[str, str]]:
+    tuples_list: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
     """Join adjacent `usaddress` fields."""
     combined_list = []
     current_tag = None
@@ -316,15 +316,15 @@ def _combine_consecutive_tuples(
     return combined_list
 
 
-def _manual_join(parsed: List[tuple]) -> Tuple[Dict[str, str], List[Union[str, None]]]:
+def manual_join(parsed: list[tuple]) -> tuple[dict[str, str], list[str | None]]:
     """Remove duplicates and join remaining fields."""
     parsed_clean = [i for i in parsed if i[1] not in toss_tags]
     counts = Counter([i[1] for i in parsed_clean])
     ok_tags = [tag for tag, count in counts.items() if count == 1]
-    ok_dict: Dict[str, str] = {i[1]: i[0] for i in parsed_clean if i[1] in ok_tags}
+    ok_dict: dict[str, str] = {i[1]: i[0] for i in parsed_clean if i[1] in ok_tags}
     removed = [osm_mapping.get(field) for field, count in counts.items() if count > 1]
 
-    new_dict: Dict[str, Union[str, None]] = {}
+    new_dict: dict[str, str | None] = {}
     if "addr:street" not in removed:
         new_dict["addr:street"] = addr_street(ok_dict)
     if "addr:housenumber" not in removed:
@@ -360,7 +360,7 @@ def collapse_list(seq: list) -> list:
     return [x for x in seq if not (x in seen or seen_add(x))]
 
 
-def split_unit(address_string: str) -> Dict[str, str]:
+def split_unit(address_string: str) -> dict[str, str]:
     """Split unit from address string, if present."""
     address_string = address_string.strip(" ")
     if not any(char.isalpha() for char in address_string):
@@ -389,7 +389,7 @@ def remove_prefix(text: str, prefix: str) -> str:
     return text
 
 
-def get_address(address_string: str) -> Tuple[Dict[str, str], List[Union[str, None]]]:
+def get_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
     """Process address strings.
 
     ```python
@@ -421,7 +421,7 @@ def get_address(address_string: str) -> Tuple[Dict[str, str], List[Union[str, No
         collapsed = collapse_list(
             [(i[0].strip(" .,#"), i[1]) for i in err.parsed_string]
         )
-        cleaned, removed = _manual_join(_combine_consecutive_tuples(collapsed))
+        cleaned, removed = manual_join(_combine_consecutive_tuples(collapsed))
 
     for toss in toss_tags:
         cleaned.pop(toss, None)

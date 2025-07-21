@@ -5,7 +5,28 @@
 from pydantic import ValidationError
 import pytest
 from src.atlus.objects import Address
-from src.atlus.atlus import *
+from src.atlus.atlus import (
+    get_title,
+    us_replace,
+    mc_replace,
+    ord_replace,
+    direct_expand,
+    cap_match,
+    grid_match,
+    remove_br_unicode,
+    manual_join,
+    split_unit,
+    remove_prefix,
+    get_address,
+    get_phone,
+    grid_comp,
+    regex,
+    abbr_join_comp,
+    dir_fill_comp,
+    name_street_expand,
+    help_join,
+    collapse_list,
+)
 
 
 def test_get_title() -> None:
@@ -71,6 +92,16 @@ def test_direct_expand() -> None:
     assert dir_fill_comp.sub(direct_expand, "N Hyatt Rd.") == "North Hyatt Rd."
 
 
+def test_cap_match() -> None:
+    value = "Us Route 123"
+    assert regex.sub(r"\b(C[rh]|S[rh]|[FR]m|Us)\b", cap_match, value) == "US Route 123"
+
+
+def test_grid_match() -> None:
+    address_string = "N65w25055"
+    assert grid_comp.sub(grid_match, address_string) == "N65W25055"
+
+
 def test_replace_br_tags() -> None:
     """Test cases to replace br tags"""
     assert remove_br_unicode("Hello<br/>World") == "Hello,World"
@@ -103,6 +134,165 @@ def test_basic_join() -> None:
     tags = {"street": "Main St", "city": "Springfield", "zip": "12345"}
     keep = ["street", "city"]
     assert help_join(tags, keep) == "Main St Springfield"
+
+
+def test_manual_join_basic() -> None:
+    """Test basic functionality with no duplicates."""
+    parsed = [
+        ("123", "AddressNumber"),
+        ("Main", "StreetName"),
+        ("Street", "StreetNamePostType"),
+        ("Springfield", "PlaceName"),
+        ("IL", "StateName"),
+        ("62701", "ZipCode"),
+    ]
+
+    result, removed = manual_join(parsed)
+
+    expected = {
+        "addr:housenumber": "123",
+        "addr:street": "Main Street",
+        "addr:city": "Springfield",
+        "addr:state": "IL",
+        "addr:postcode": "62701",
+    }
+
+    assert result == expected
+    assert removed == []
+
+
+def test_manual_join_with_duplicates() -> None:
+    """Test handling of duplicate tags."""
+    parsed = [
+        ("123", "AddressNumber"),
+        ("456", "AddressNumber"),  # Duplicate
+        ("Main", "StreetName"),
+        ("Street", "StreetNamePostType"),
+        ("Springfield", "PlaceName"),
+        ("IL", "StateName"),
+    ]
+
+    result, removed = manual_join(parsed)
+
+    expected = {
+        "addr:street": "Main Street",
+        "addr:city": "Springfield",
+        "addr:state": "IL",
+    }
+
+    assert result == expected
+    assert removed == ["addr:housenumber"]
+
+
+def test_manual_join_with_toss_tags() -> None:
+    """Test removal of tags in toss_tags list."""
+    parsed = [
+        ("123", "AddressNumber"),
+        ("Main", "StreetName"),
+        ("John Doe", "Recipient"),  # Should be tossed
+        ("Building A", "LandmarkName"),  # Should be tossed
+        ("Springfield", "PlaceName"),
+    ]
+
+    result, removed = manual_join(parsed)
+
+    expected = {
+        "addr:housenumber": "123",
+        "addr:street": "Main",
+        "addr:city": "Springfield",
+    }
+
+    assert result == expected
+    assert removed == []
+
+
+def test_manual_join_complex_street() -> None:
+    """Test joining multiple street components."""
+    parsed = [
+        ("123", "AddressNumber"),
+        ("North", "StreetNamePreDirectional"),
+        ("Main", "StreetName"),
+        ("Street", "StreetNamePostType"),
+        ("Springfield", "PlaceName"),
+    ]
+
+    result, removed = manual_join(parsed)
+
+    expected = {
+        "addr:housenumber": "123",
+        "addr:street": "North Main Street",
+        "addr:city": "Springfield",
+    }
+
+    assert result == expected
+    assert removed == []
+
+
+def test_manual_join_with_unit() -> None:
+    """Test handling of unit/occupancy identifier."""
+    parsed = [
+        ("123", "AddressNumber"),
+        ("Main", "StreetName"),
+        ("Apt", "OccupancyType"),  # Should be tossed
+        ("2A", "OccupancyIdentifier"),
+        ("Springfield", "PlaceName"),
+    ]
+
+    result, removed = manual_join(parsed)
+
+    expected = {
+        "addr:housenumber": "123",
+        "addr:street": "Main",
+        "addr:unit": "2A",
+        "addr:city": "Springfield",
+    }
+
+    assert result == expected
+    assert removed == []
+
+
+def test_manual_join_empty_input() -> None:
+    """Test with empty input."""
+    parsed = []
+
+    result, removed = manual_join(parsed)
+
+    assert result == {}
+    assert removed == []
+
+
+def test_manual_join_only_toss_tags() -> None:
+    """Test with only tags that should be tossed."""
+    parsed = [
+        ("John Doe", "Recipient"),
+        ("Building A", "LandmarkName"),
+        ("Box 123", "USPSBoxID"),
+    ]
+
+    result, removed = manual_join(parsed)
+
+    assert result == {}
+    assert removed == []
+
+
+def test_manual_join_multiple_duplicates() -> None:
+    """Test with multiple different duplicate types."""
+    parsed = [
+        ("123", "AddressNumber"),
+        ("456", "AddressNumber"),  # Duplicate housenumber
+        ("Main", "StreetName"),
+        ("Oak", "StreetName"),  # Duplicate street
+        ("Springfield", "PlaceName"),
+        ("Chicago", "PlaceName"),  # Duplicate city
+        ("IL", "StateName"),
+    ]
+
+    result, removed = manual_join(parsed)
+
+    expected = {"addr:state": "IL"}
+
+    assert result == expected
+    assert set(removed) == {"addr:housenumber", "addr:street", "addr:city"}
 
 
 def test_keep_all() -> None:
@@ -182,21 +372,13 @@ def test_complex_data_types() -> None:
 def test_split_unit():
     """Test cases for split_unit"""
     assert split_unit("123A") == {"addr:housenumber": "123", "addr:unit": "A"}
-
     assert split_unit("456") == {"addr:housenumber": "456"}
-
     assert split_unit("  789  ") == {"addr:housenumber": "789"}
-
     assert split_unit("123-45") == {"addr:housenumber": "123-45"}
-
     assert split_unit("987-B") == {"addr:housenumber": "987", "addr:unit": "B"}
-
     assert split_unit("987/B") == {"addr:housenumber": "987", "addr:unit": "B"}
-
     assert split_unit("987 B") == {"addr:housenumber": "987", "addr:unit": "B"}
-
     assert split_unit("987 B2") == {"addr:housenumber": "987", "addr:unit": "B2"}
-
     assert split_unit("") == {"addr:housenumber": ""}
 
 
@@ -249,7 +431,7 @@ def test_get_address_removed_postcode() -> None:
     assert removed == ["addr:postcode"]
 
 
-def test_valid_phone_number_1() -> None:
+def test_valid_phone_number() -> None:
     """Test cases for valid phone numbers"""
     assert get_phone("2029009019") == "+1 202-900-9019"
     assert get_phone("(202) 900-9019") == "+1 202-900-9019"
