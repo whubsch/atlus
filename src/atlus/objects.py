@@ -1,6 +1,5 @@
 """Define objects for parsing fields."""
 
-
 from pydantic import BaseModel, Field
 
 
