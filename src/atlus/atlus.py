@@ -408,7 +408,7 @@ def get_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
         address_string (str): The address string to process.
 
     Returns:
-        Tuple[Dict[str, str], List[Union[str, None]]]:
+        tuple[dict[str, str], list[str | None]]:
         The processed address string and the removed fields.
     """
     try:
