@@ -512,21 +512,6 @@ def test_address_creation_invalid_state() -> None:
         )
 
 
-def test_address_creation_invalid_postcode() -> None:
-    """Test creation with invalid postcode"""
-    with pytest.raises(ValidationError):
-        Address(
-            **{
-                "addr:housenumber": "1200-29",
-                "addr:street": "North Spring Street",
-                "addr:unit": "B",
-                "addr:city": "Los Angeles",
-                "addr:state": "CA",
-                "addr:postcode": "9001",  # Invalid postcode
-            }
-        )
-
-
 def test_address_creation_optional_fields() -> None:
     """Test creation with optional fields missing"""
     address = Address(**{"addr:housenumber": 200, "addr:street": "North Spring Street"})
@@ -556,3 +541,63 @@ def test_address_alias_handling() -> None:
     assert address.addr_city == "Los Angeles"
     assert address.addr_state == "CA"
     assert address.addr_postcode == "90012"
+
+
+def test_address_model_aliases():
+    """Test Address model field aliases."""
+    addr = Address(**{"addr:housenumber": "123", "addr:street": "Main St"})
+
+    # Test model_dump with aliases
+    dumped = addr.model_dump(exclude_none=True, by_alias=True)
+    assert "addr:housenumber" in dumped
+    assert "addr:street" in dumped
+    assert dumped["addr:housenumber"] == "123"
+    assert dumped["addr:street"] == "Main St"
+
+    # Test creation with invalid state (too long)
+    with pytest.raises(ValidationError):
+        Address(
+            **{
+                "addr:housenumber": "1200-29",
+                "addr:street": "North Spring Street",
+                "addr:unit": "B",
+                "addr:city": "Los Angeles",
+                "addr:state": "CAL",  # Invalid state
+                "addr:postcode": "90012-4801",
+            }
+        )
+
+
+def test_collapse_list_preserves_order():
+    """Test that collapse_list preserves the order of first occurrence."""
+    input_list = ["c", "a", "b", "a", "c", "d"]
+    expected = ["c", "a", "b", "d"]
+    assert collapse_list(input_list) == expected
+
+
+def test_address_creation_invalid_postcode() -> None:
+    """Test creation with invalid postcode"""
+    with pytest.raises(ValidationError):
+        Address(
+            **{
+                "addr:housenumber": "1200-29",
+                "addr:street": "North Spring Street",
+                "addr:unit": "B",
+                "addr:city": "Los Angeles",
+                "addr:state": "CA",
+                "addr:postcode": "9001",  # Invalid postcode
+            }
+        )
+
+
+def test_get_address_comprehensive_cleaning():
+    """Test get_address with comprehensive address cleaning."""
+    # Test address that exercises multiple cleaning functions
+    test_address = "123A Main St., Apt B, New York, NY 12345-0000"
+    result, removed = get_address(test_address)
+
+    assert result["addr:housenumber"] == "123"
+    assert result["addr:unit"] == "A"
+    assert "Main" in result["addr:street"]
+    assert "Street" in result["addr:street"]
+    assert result["addr:postcode"] == "12345"  # Should remove -0000

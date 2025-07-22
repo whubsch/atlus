@@ -1,7 +1,6 @@
 """Functions and tools to process the raw address strings."""
 
 from collections import Counter
-from typing import Dict, List, Tuple, Union
 
 import regex
 import usaddress
@@ -262,7 +261,7 @@ def clean_address(address_string: str) -> str:
         "", remove_br_unicode(address_string).replace("  ", " ").strip(" ,.")
     )
     address_string = paren_comp.sub("", address_string)
-    return grid_comp.sub(grid_match, address_string)
+    return grid_comp.sub(grid_match, address_string).strip(" ,.")
 
 
 def help_join(tags, keep: list[str]) -> str:

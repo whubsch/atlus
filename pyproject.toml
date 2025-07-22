@@ -24,7 +24,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Typing :: Typed",
 ]
-dependencies = ["usaddress>=0.5.10", "regex>=2024.4.16"]
+dependencies = ["usaddress>=0.5.15", "regex>=2024.11.6"]
 
 [project.urls]
 Documentation = "https://whubsch.github.io/atlus/index.html"
