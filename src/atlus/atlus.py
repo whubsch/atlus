@@ -470,9 +470,9 @@ def get_phone(phone: str) -> str:
 
     ```python
     >>> get_phone("2029009019")
-    "+1 202-900-9019"
+    "+1-202-900-9019"
     >>> get_phone("(202) 900-9019")
-    "+1 202-900-9019"
+    "+1-202-900-9019"
     >>> get_phone("202-900-901")
     ValueError: Invalid phone number: 202-900-901
     ```
@@ -491,6 +491,6 @@ def get_phone(phone: str) -> str:
     )
     if phone_valid:
         return (
-            f"+1 {phone_valid.group(1)}-{phone_valid.group(2)}-{phone_valid.group(3)}"
+            f"+1-{phone_valid.group(1)}-{phone_valid.group(2)}-{phone_valid.group(3)}"
         )
     raise ValueError(f"Invalid phone number: {phone}")

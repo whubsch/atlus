@@ -433,11 +433,11 @@ def test_get_address_removed_postcode() -> None:
 
 def test_valid_phone_number() -> None:
     """Test cases for valid phone numbers"""
-    assert get_phone("2029009019") == "+1 202-900-9019"
-    assert get_phone("(202) 900-9019") == "+1 202-900-9019"
-    assert get_phone("202-900-9019") == "+1 202-900-9019"
-    assert get_phone("+1 202 900 9019") == "+1 202-900-9019"
-    assert get_phone("+1 (202) 900-9019") == "+1 202-900-9019"
+    assert get_phone("2029009019") == "+1-202-900-9019"
+    assert get_phone("(202) 900-9019") == "+1-202-900-9019"
+    assert get_phone("202-900-9019") == "+1-202-900-9019"
+    assert get_phone("+1 202 900 9019") == "+1-202-900-9019"
+    assert get_phone("+1 (202) 900-9019") == "+1-202-900-9019"
 
 
 def test_invalid_phone_number_1() -> None:
