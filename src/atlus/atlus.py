@@ -466,7 +466,7 @@ def get_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
 
 
 def get_phone(phone: str) -> str:
-    """Format phone numbers to the US and Canadian standard format of `+1 XXX-XXX-XXXX`.
+    """Format phone numbers to the US and Canadian standard format of `+1-XXX-XXX-XXXX`.
 
     ```python
     >>> get_phone("2029009019")
