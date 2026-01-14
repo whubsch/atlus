@@ -14,6 +14,7 @@ from .resources import (
     grid_comp,
     name_expand,
     paren_comp,
+    phone_comp,
     post_comp,
     saint_comp,
     sr_comp,
@@ -388,6 +389,105 @@ def remove_prefix(text: str, prefix: str) -> str:
     return text
 
 
+def _process_housenumber(value: str) -> dict[str, str]:
+    """Split house number and unit if needed."""
+    return split_unit(value)
+
+
+def _process_street(value: str) -> str:
+    """Normalize street name."""
+    street = abbrs(value)
+    return street_comp.sub("Street", street).strip(".")
+
+
+def _process_city(value: str) -> str:
+    """Normalize city name."""
+    return abbrs(get_title(value, single_word=True))
+
+
+def _process_state(value: str) -> str:
+    """Normalize state code or name."""
+    normalized = value.replace(".", "").upper()
+
+    # Try direct lookup in expansion map (e.g., "PENN" -> "PA")
+    if normalized.upper() in state_expand:
+        return state_expand[normalized.upper()]
+
+    # Check if already a valid 2-letter state code
+    if len(normalized) == 2 and normalized in state_expand.values():
+        return normalized
+
+    return value  # Return original if no match
+
+
+def _process_unit(value: str) -> str:
+    """Normalize unit designation."""
+    return value.removeprefix("Space").strip(" #.")
+
+
+def _process_postcode(value: str) -> str:
+    """Normalize postal code format."""
+    return post_comp.sub(r"\1", value).replace(" ", "-")
+
+
+def _apply_field_processors(cleaned: dict[str, str]) -> dict[str, str]:
+    """Apply specialized processors to address fields."""
+    processors = {
+        "addr:housenumber": _process_housenumber,
+        "addr:street": _process_street,
+        "addr:city": _process_city,
+        "addr:state": _process_state,
+        "addr:unit": _process_unit,
+        "addr:postcode": _process_postcode,
+    }
+
+    result = dict(cleaned)
+
+    for field, processor in processors.items():
+        if field in result:
+            processed = processor(result[field])
+            # Handle housenumber which returns a dict to merge
+            if isinstance(processed, dict):
+                result.update(processed)
+            else:
+                result[field] = processed
+
+    return result
+
+
+def _parse_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
+    """Parse address string and handle errors."""
+    try:
+        cleaned = usaddress.tag(clean_address(address_string), tag_mapping=osm_mapping)[
+            0
+        ]
+        removed = []
+    except usaddress.RepeatedLabelError as err:
+        collapsed = collapse_list(
+            [(i[0].strip(" .,#"), i[1]) for i in err.parsed_string]
+        )
+        cleaned, removed = manual_join(_combine_consecutive_tuples(collapsed))
+
+    return cleaned, removed
+
+
+def _validate_and_clean(
+    cleaned: dict[str, str], removed: list[str | None]
+) -> tuple[dict[str, str], list[str | None]]:
+    """Validate address and remove invalid fields."""
+    try:
+        validated = Address.model_validate(dict(cleaned))
+    except ValidationError as err:
+        bad_fields = [each.get("loc", [])[0] for each in err.errors()]
+        cleaned_ret = dict(cleaned)
+        for field in bad_fields:
+            cleaned_ret.pop(field, None)
+        removed.extend(bad_fields)
+        validated = Address.model_validate(cleaned_ret)
+
+    return validated.model_dump(exclude_none=True, by_alias=True), removed
+
+
 def get_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
     """Process address strings.
 
@@ -411,58 +511,18 @@ def get_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
         tuple[dict[str, str], list[str | None]]:
         The processed address string and the removed fields.
     """
-    try:
-        cleaned = usaddress.tag(clean_address(address_string), tag_mapping=osm_mapping)[
-            0
-        ]
-        removed = []
-    except usaddress.RepeatedLabelError as err:
-        collapsed = collapse_list(
-            [(i[0].strip(" .,#"), i[1]) for i in err.parsed_string]
-        )
-        cleaned, removed = manual_join(_combine_consecutive_tuples(collapsed))
+    # Parse the address string
+    cleaned, removed = _parse_address(address_string)
 
+    # Remove unwanted tags
     for toss in toss_tags:
         cleaned.pop(toss, None)
 
-    if "addr:housenumber" in cleaned:
-        cleaned = {**cleaned, **split_unit(cleaned["addr:housenumber"])}
+    # Apply field-specific processors
+    cleaned = _apply_field_processors(cleaned)
 
-    if "addr:street" in cleaned:
-        street = abbrs(cleaned["addr:street"])
-        cleaned["addr:street"] = street_comp.sub("Street", street).strip(".")
-
-    if "addr:city" in cleaned:
-        cleaned["addr:city"] = abbrs(get_title(cleaned["addr:city"], single_word=True))
-
-    if "addr:state" in cleaned:
-        old = cleaned["addr:state"].replace(".", "")
-        if old.upper() in state_expand:
-            cleaned["addr:state"] = state_expand[old.upper()]
-        elif len(old) == 2 and old.upper() in list(state_expand.values()):
-            cleaned["addr:state"] = old.upper()
-
-    if "addr:unit" in cleaned:
-        cleaned["addr:unit"] = cleaned["addr:unit"].removeprefix("Space").strip(" #.")
-
-    if "addr:postcode" in cleaned:
-        # remove extraneous postcode digits
-        cleaned["addr:postcode"] = post_comp.sub(
-            r"\1", cleaned["addr:postcode"]
-        ).replace(" ", "-")
-
-    try:
-        validated: Address = Address.model_validate(dict(cleaned))
-    except ValidationError as err:
-        bad_fields: list = [each.get("loc", [])[0] for each in err.errors()]
-        cleaned_ret = dict(cleaned)
-        for each in bad_fields:
-            cleaned_ret.pop(each, None)
-
-        removed.extend(bad_fields)
-        validated: Address = Address.model_validate(cleaned_ret)
-
-    return validated.model_dump(exclude_none=True, by_alias=True), removed
+    # Validate and return
+    return _validate_and_clean(cleaned, removed)
 
 
 def get_phone(phone: str) -> str:
@@ -486,9 +546,7 @@ def get_phone(phone: str) -> str:
     Raises:
         ValueError: If the phone number is invalid.
     """
-    phone_valid = regex.search(
-        r"^\(?(?:\+? ?1?[ -.]*)?(?:\(?(\d{3})\)?[ -.]*)(\d{3})[ -.]*(\d{4})$", phone
-    )
+    phone_valid = phone_comp.search(phone)
     if phone_valid:
         return (
             f"+1-{phone_valid.group(1)}-{phone_valid.group(2)}-{phone_valid.group(3)}"

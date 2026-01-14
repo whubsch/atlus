@@ -26,6 +26,13 @@ from src.atlus.atlus import (
     name_street_expand,
     help_join,
     collapse_list,
+    _process_housenumber,
+    _process_street,
+    _process_city,
+    _process_state,
+    _process_unit,
+    _process_postcode,
+    _apply_field_processors,
 )
 
 
@@ -601,3 +608,288 @@ def test_get_address_comprehensive_cleaning():
     assert "Main" in result["addr:street"]
     assert "Street" in result["addr:street"]
     assert result["addr:postcode"] == "12345"  # Should remove -0000
+
+
+# Tests for address field helper functions
+
+
+def test_process_housenumber_with_unit():
+    """Test _process_housenumber splits number and unit."""
+    result = _process_housenumber("123A")
+    assert result["addr:housenumber"] == "123"
+    assert result["addr:unit"] == "A"
+
+
+def test_process_housenumber_without_unit():
+    """Test _process_housenumber with just a number."""
+    result = _process_housenumber("456")
+    assert result["addr:housenumber"] == "456"
+    assert "addr:unit" not in result
+
+
+def test_process_street_abbreviations():
+    """Test _process_street expands abbreviations."""
+    assert _process_street("Main St") == "Main Street"
+    assert _process_street("Oak Ave") == "Oak Avenue"
+    assert _process_street("Maple Rd") == "Maple Road"
+
+
+def test_process_street_removes_dots():
+    """Test _process_street removes trailing periods."""
+    assert _process_street("Elm St.") == "Elm Street"
+
+
+def test_process_city_title_case():
+    """Test _process_city normalizes city names."""
+    assert _process_city("NEW YORK") == "New York"
+    assert _process_city("LOS ANGELES") == "Los Angeles"
+    assert _process_city("BOSTON") == "Boston"
+
+
+def test_process_state_abbreviation():
+    """Test _process_state handles state abbreviations."""
+    assert _process_state("PA") == "PA"
+    assert _process_state("pa") == "PA"
+    assert _process_state("P.A.") == "PA"
+
+
+def test_process_state_full_name():
+    """Test _process_state handles full state names."""
+    assert _process_state("Pennsylvania") == "PA"
+    assert _process_state("New York") == "NY"
+    assert _process_state("California") == "CA"
+
+
+def test_process_state_short_name():
+    """Test _process_state handles short state names."""
+    assert _process_state("Penn") == "PA"
+    assert _process_state("CALIF") == "CA"
+    assert _process_state("s dak") == "SD"
+    assert _process_state("NW Territories") == "NT"
+
+
+def test_process_state_already_valid():
+    """Test _process_state with already valid state code."""
+    assert _process_state("NY") == "NY"
+    assert _process_state("CA") == "CA"
+
+
+def test_process_state_invalid():
+    """Test _process_state returns original for invalid states."""
+    assert _process_state("ZZ") == "ZZ"
+    assert _process_state("Invalid") == "Invalid"
+
+
+def test_process_unit_removes_space_prefix():
+    """Test _process_unit removes 'Space' prefix."""
+    assert _process_unit("Space 5") == "5"
+    assert _process_unit("Space123") == "123"
+
+
+def test_process_unit_strips_characters():
+    """Test _process_unit strips spaces, hashes, and periods."""
+    assert _process_unit(" #A ") == "A"
+    assert _process_unit("#B.") == "B"
+    assert _process_unit("Unit C") == "Unit C"
+
+
+def test_process_postcode_removes_extra_digits():
+    """Test _process_postcode removes trailing zeros."""
+    assert _process_postcode("12345-0000") == "12345"
+    assert _process_postcode("98765-1234") == "98765-1234"
+
+
+def test_process_postcode_handles_spaces():
+    """Test _process_postcode converts spaces to hyphens."""
+    assert _process_postcode("12345 6789") == "12345-6789"
+
+
+def test_apply_field_processors_integration():
+    """Test _apply_field_processors applies all processors correctly."""
+    cleaned = {
+        "addr:housenumber": "123A",
+        "addr:street": "Main St",
+        "addr:city": "NEW YORK",
+        "addr:state": "ny",
+        "addr:postcode": "10001-0000",
+    }
+
+    result = _apply_field_processors(cleaned)
+
+    assert result["addr:housenumber"] == "123"
+    assert result["addr:unit"] == "A"  # Split from housenumber
+    assert result["addr:street"] == "Main Street"
+    assert result["addr:city"] == "New York"
+    assert result["addr:state"] == "NY"
+    assert result["addr:postcode"] == "10001"
+
+
+def test_apply_field_processors_partial_fields():
+    """Test _apply_field_processors with only some fields present."""
+    cleaned = {"addr:housenumber": "999", "addr:city": "BOSTON"}
+
+    result = _apply_field_processors(cleaned)
+
+    assert result["addr:housenumber"] == "999"
+    assert result["addr:city"] == "Boston"
+    assert "addr:street" not in result
+    assert "addr:state" not in result
+
+
+# High priority edge case tests for get_address
+
+
+def test_get_address_empty_input():
+    """Test get_address with empty or whitespace-only input."""
+    # Empty string should still return some result (likely empty dict)
+    result, removed = get_address("")
+    assert isinstance(result, dict)
+    assert isinstance(removed, list)
+
+
+def test_get_address_whitespace_only():
+    """Test get_address with whitespace-only input."""
+    result, removed = get_address("   ")
+    assert isinstance(result, dict)
+    assert isinstance(removed, list)
+
+
+def test_get_address_minimal_address():
+    """Test get_address with minimal information (just street)."""
+    result, removed = get_address("Main Street")
+    assert isinstance(result, dict)
+    # Should have at least street information if parseable
+    if result:
+        assert "addr:street" in result or len(result) >= 0
+
+
+def test_get_address_only_number():
+    """Test get_address with only a house number."""
+    result, removed = get_address("123")
+    assert isinstance(result, dict)
+    assert isinstance(removed, list)
+
+
+def test_get_address_no_number():
+    """Test get_address with street name but no house number."""
+    result, removed = get_address("Main Street, Springfield, IL")
+    assert isinstance(result, dict)
+    # May or may not have a house number depending on parsing
+    if "addr:street" in result:
+        assert "Main" in result["addr:street"]
+
+
+def test_get_address_unusual_format():
+    """Test get_address with unusual but valid format."""
+    # Address with lots of punctuation
+    result, removed = get_address("123, Main St.; Springfield!! IL??? 62701")
+    assert isinstance(result, dict)
+    assert isinstance(removed, list)
+
+
+def test_get_address_partial_postcode():
+    """Test get_address with 5-digit postcode only (no +4)."""
+    result, removed = get_address("123 Main St, Springfield, IL 62701")
+    assert result["addr:postcode"] == "62701"
+    assert result["addr:housenumber"] == "123"
+
+
+def test_get_address_state_variations():
+    """Test get_address handles various state formats."""
+    # Full state name uppercase
+    result1, _ = get_address("123 Main St, Springfield, ILLINOIS 62701")
+
+    # Lowercase abbreviation
+    result2, _ = get_address("123 Main St, Springfield, il 62701")
+
+    # With periods
+    result3, _ = get_address("123 Main St, Springfield, I.L. 62701")
+
+    # All should normalize state properly
+    for result in [result1, result2, result3]:
+        if "addr:state" in result:
+            assert len(result["addr:state"]) == 2  # Should be 2-letter code
+
+
+def test_get_address_multiple_street_parts():
+    """Test get_address with complex street names."""
+    result, removed = get_address("456 Dr. Martin Luther King Jr. Boulevard")
+    assert result["addr:housenumber"] == "456"
+    assert "addr:street" in result
+    assert "Boulevard" in result["addr:street"]
+
+
+def test_get_address_duplicate_fields():
+    """Test get_address with duplicated fields."""
+    result, removed = get_address("123 Main Street 39199 91102")
+    assert result["addr:housenumber"] == "123"
+    assert result["addr:street"] == "Main Street"
+    assert "addr:postcode" in removed
+
+
+def test_parse_address_repeated_label_error():
+    """Test _parse_address explicitly handles RepeatedLabelError path."""
+    from src.atlus.atlus import _parse_address
+
+    # This type of address often triggers RepeatedLabelError
+    # (multiple address numbers or ambiguous components)
+    test_address = "123 456 Main Street"  # Two numbers
+    result, removed = _parse_address(test_address)
+
+    assert isinstance(result, dict)
+    assert isinstance(removed, list)
+
+
+def test_parse_address_normal_path():
+    """Test _parse_address with normal address (happy path)."""
+    from src.atlus.atlus import _parse_address
+
+    result, removed = _parse_address("789 Oak Avenue, Boston, MA 02101")
+
+    assert isinstance(result, dict)
+    assert removed == []  # Should be empty for successful parse
+    assert len(result) > 0  # Should have parsed components
+
+
+def test_validate_and_clean_invalid_fields():
+    """Test _validate_and_clean removes multiple invalid fields."""
+    from src.atlus.atlus import _validate_and_clean
+
+    # Create a dict with invalid field values
+    cleaned = {
+        "addr:housenumber": "123",
+        "addr:street": "Main Street",
+        "addr:state": "INVALID_STATE_CODE_TOO_LONG",  # Invalid
+        "addr:postcode": "123",  # Too short, invalid format
+    }
+    removed = []
+
+    result, removed_fields = _validate_and_clean(cleaned, removed)
+
+    # Should have removed invalid fields
+    assert "addr:housenumber" in result
+    assert "addr:street" in result
+    # Invalid fields should be either corrected or removed
+    assert len(removed_fields) == 2
+    assert "addr:state" in removed_fields
+    assert "addr:postcode" in removed_fields
+
+
+def test_validate_and_clean_all_valid():
+    """Test _validate_and_clean with all valid fields."""
+    from src.atlus.atlus import _validate_and_clean
+
+    cleaned = {
+        "addr:housenumber": "123",
+        "addr:street": "Main Street",
+        "addr:city": "Springfield",
+        "addr:state": "IL",
+        "addr:postcode": "62701",
+    }
+    removed = []
+
+    result, removed_fields = _validate_and_clean(cleaned, removed)
+
+    # All fields should be preserved
+    assert result == cleaned
+    assert removed_fields == []

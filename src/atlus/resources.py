@@ -516,3 +516,7 @@ paren_comp = regex.compile(r" ?\(.*\)")
 grid_comp = regex.compile(
     r"\b([NnSs]\d{2,}\s*[EeWw]\d{2,}|[EeWw]\d{2,}\s*[NnSs]\d{2,})\b"
 )
+
+phone_comp = regex.compile(
+    r"^\(?(?:\+? ?1?[ -.]*)?(?:\(?(\d{3})\)?[ -.]*)(\d{3})[ -.]*(\d{4})$"
+)
