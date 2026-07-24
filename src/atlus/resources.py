@@ -525,6 +525,7 @@ day_expand = {
     "MONDAY": "Mo",
     "MON": "Mo",
     "MO": "Mo",
+    "M": "Mo",
     "TUESDAY": "Tu",
     "TUES": "Tu",
     "TUE": "Tu",
@@ -533,6 +534,7 @@ day_expand = {
     "WEDS": "We",
     "WED": "We",
     "WE": "We",
+    "W": "We",
     "THURSDAY": "Th",
     "THURS": "Th",
     "THUR": "Th",
@@ -541,6 +543,7 @@ day_expand = {
     "FRIDAY": "Fr",
     "FRI": "Fr",
     "FR": "Fr",
+    "F": "Fr",
     "SATURDAY": "Sa",
     "SAT": "Sa",
     "SA": "Sa",
@@ -591,7 +594,7 @@ time_start_comp = regex.compile(
 filler_comp = regex.compile(r"\b(?:open|hours?|hrs?)\b", flags=regex.IGNORECASE)
 
 time_token_comp = regex.compile(
-    r"^(\d{1,2})(:(\d{2}))?\s*([ap]\.?m\.?)?$", flags=regex.IGNORECASE
+    r"^(\d{1,2})(:(\d{2}))?\s*([ap]\.?m?\.?)?$", flags=regex.IGNORECASE
 )
 
 time_range_split_comp = regex.compile(

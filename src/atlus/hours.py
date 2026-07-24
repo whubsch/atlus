@@ -8,6 +8,7 @@ from .resources import (
     comma_day_comp,
     daily_comp,
     day_24_comp,
+    day_comp,
     day_expand,
     day_order,
     filler_comp,
@@ -59,11 +60,11 @@ def _parse_days(day_part: str) -> list[DayRange]:
 
     ranges: list[DayRange] = []
     for token in regex.split(r"\s*,\s*", day_part):
-        token = token.strip(" .")
+        token = token.strip(" .:")
         if not token:
             continue
         parts = time_range_split_comp.split(token, maxsplit=1)
-        parts = [p.strip(" .") for p in parts if p.strip(" .")]
+        parts = [p.strip(" .:") for p in parts if p.strip(" .:")]
         if len(parts) == 2:
             start_code = day_expand.get(parts[0].upper())
             end_code = day_expand.get(parts[1].upper())
@@ -112,9 +113,9 @@ def _parse_single_time(token: str) -> tuple[int, int, bool]:
 
     if meridiem:
         meridiem = meridiem.replace(".", "")
-        if meridiem == "pm" and hour != 12:
+        if meridiem.startswith("p") and hour != 12:
             hour += 12
-        elif meridiem == "am" and hour == 12:
+        elif meridiem.startswith("a") and hour == 12:
             hour = 0
         return hour, minute, True
 
@@ -161,6 +162,22 @@ def _resolve_pair(
     return f"{sh:02d}:{sm:02d}", f"{eh:02d}:{em:02d}"
 
 
+def _meridiem_letter(token: str) -> str | None:
+    """Extract the explicit am/pm marker (if any) from a time token.
+
+    Args:
+        token (str): A single time token, e.g. "8:30p" or "4:30".
+
+    Returns:
+        str | None: "a" or "p" if the token has an explicit meridiem
+        marker, otherwise None.
+    """
+    match = time_token_comp.match(token.strip().lower())
+    if not match or not match.group(4):
+        return None
+    return match.group(4).replace(".", "")[0]
+
+
 def _parse_time_span(token: str) -> TimeSpan:
     """Parse a single time range token, e.g. "8am-5pm" or "08:00-12:00".
 
@@ -180,6 +197,19 @@ def _parse_time_span(token: str) -> TimeSpan:
     start = _parse_single_time(parts[0])
     end = _parse_single_time(parts[1])
     start_str, end_str = _resolve_pair(start, end)
+
+    # a colon-form start time with no explicit am/pm marker (e.g. the "4:30"
+    # in "4:30-8:30p") is normally assumed to already be in 24-hour form,
+    # but when it's paired with an explicit PM end time it's meant to share
+    # that same meridiem -- adjust it to match, unless it's already noon.
+    if (
+        start[2]
+        and _meridiem_letter(parts[0]) is None
+        and _meridiem_letter(parts[1]) == "p"
+        and 0 < start[0] < 12
+    ):
+        start_str = f"{start[0] + 12:02d}:{start[1]:02d}"
+
     return TimeSpan(start=start_str, end=end_str)
 
 
@@ -218,6 +248,59 @@ def _split_comma_days(text: str) -> list[str]:
             last = match.end()
     results.append(text[last:])
     return [segment for segment in results if segment.strip()]
+
+
+def _has_day_info(segment: str) -> bool:
+    """Check whether a segment contains any recognizable day reference.
+
+    Args:
+        segment (str): The segment to check.
+
+    Returns:
+        bool: True if the segment mentions a day name or a day-related
+        keyword such as "weekdays" or "daily".
+    """
+    return bool(
+        day_comp.search(segment)
+        or weekday_comp.search(segment)
+        or weekend_comp.search(segment)
+        or daily_comp.search(segment)
+    )
+
+
+def _merge_day_time_lines(segments: list[str]) -> list[str]:
+    """Merge consecutive top-level segments where days and times are split
+    across separate lines (e.g. a day/day-range on its own line, followed by
+    a line with only the corresponding times).
+
+    A segment is merged forward into the buffer until a segment containing
+    time/status information is seen, since that's what completes the rule.
+    Segments that contain neither day nor time/status information (e.g. a
+    stray section header like "Kitchen Hours:") are treated as noise and
+    dropped, rather than being merged into an adjacent rule.
+
+    Args:
+        segments (list[str]): The top-level segments, as split on rule
+            separators (";" or newlines).
+
+    Returns:
+        list[str]: The segments, with day-only/time-only line pairs merged
+        and irrelevant noise lines removed.
+    """
+    merged: list[str] = []
+    buffer: str | None = None
+    for segment in segments:
+        has_time = bool(time_start_comp.search(segment))
+        if not has_time and not _has_day_info(segment):
+            # noise line (no day or time info) -- drop it
+            continue
+        buffer = segment if buffer is None else f"{buffer} {segment}"
+        if has_time:
+            merged.append(buffer)
+            buffer = None
+    if buffer is not None:
+        merged.append(buffer)
+    return merged
 
 
 def _split_day_time(segment: str) -> tuple[str, str]:
@@ -398,6 +481,7 @@ def get_hours(value: str) -> str:
         return "24/7"
 
     top_segments = [s for s in rule_split_comp.split(normalized) if s.strip()]
+    top_segments = _merge_day_time_lines(top_segments)
     segments = [sub for top in top_segments for sub in _split_comma_days(top)]
     rules = [_parse_segment(segment) for segment in segments]
 

@@ -376,6 +376,10 @@ def test_get_hours_weekends_keyword() -> None:
 def test_get_hours_daily_keyword_omits_days() -> None:
     """Test 'daily' produces a rule with no day prefix."""
     assert get_hours("Daily 9am-9pm") == "09:00-21:00"
+    assert get_hours("9 am-9 pm") == "09:00-21:00"
+    assert get_hours("Open daily 9am-9pm") == "09:00-21:00"
+    assert get_hours("Open daily 9-9") == "09:00-21:00"
+    assert get_hours("9 am to 9 pm") == "09:00-21:00"
 
 
 def test_get_hours_every_day_keyword() -> None:
@@ -432,6 +436,22 @@ def test_get_hours_mixed_case_input() -> None:
     assert get_hours("mON-fRI 8AM-5PM") == "Mo-Fr 08:00-17:00"
 
 
+def test_get_hours_mixed_days() -> None:
+    """Test that separate day specifications are combined correctly."""
+    assert (
+        get_hours("M-Thur 9am-5pm; Friday 9am-6pm; Sat closed")
+        == "Mo-Th 09:00-17:00; Fr 09:00-18:00; Sa off"
+    )
+
+
+def test_get_hours_exception_days() -> None:
+    """Test that explicitly excepted day specifications are combined correctly."""
+    assert (
+        get_hours("M-Thur 9am-5pm; Wed 9am-6pm; Sat closed")
+        == "Mo-Tu,Th 09:00-17:00; We 09:00-18:00; Sa off"
+    )
+
+
 def test_get_hours_real_world() -> None:
     """Test handling of real world raw strings."""
     assert (
@@ -453,4 +473,66 @@ def test_get_hours_real_world() -> None:
     Tuesday10:00 AM - 12:00 AM
     Wednesday10:00 AM - 12:00 AM""")
         == "Mo-Th,Su 10:00-00:00; Fr-Sa 10:00-01:00"
+    )
+    assert (
+        get_hours("""Mon 10am - 2pm
+    Tue 10am - 2pm
+    Wed 10am - 2pm""")
+        == "Mo-We 10:00-14:00"
+    )
+    assert (
+        get_hours("Mon 10am - 2pm, Tue 10am - 2pm, Wed 10am - 2pm")
+        == "Mo-We 10:00-14:00"
+    )
+    assert (
+        get_hours("""M-F 11am-10pm
+        Saturday 10am-10pm
+        Sunday 10am-9pm""")
+        == "Mo-Fr 11:00-22:00; Sa 10:00-22:00; Su 10:00-21:00"
+    )
+    assert (
+        get_hours("""
+            Tuesday - Saturday
+            04:00 PM - 10:00 PM
+            Sunday
+            04:00 PM - 09:00 PM
+""")
+        == "Tu-Sa 16:00-22:00; Su 16:00-21:00"
+    )
+    assert (
+        get_hours("""Wed. - Fri.
+        11:00 am - 7:45 pm
+        Tues., Sat. and Sun.
+        11:00 am - 5:45 pm""")
+        == "Tu,Sa-Su 11:00-17:45; We-Fr 11:00-19:45"
+    )
+    assert (
+        get_hours(
+            "Mon 10am - 2pm, Tue 10am - 2pm, Wed 10am - 2pm, Thu 10am - 2pm, Fri 10am - 2pm, Sat and Sun closed"
+        )
+        == "Mo-Fr 10:00-14:00; Sa-Su off"
+    )
+    assert (
+        get_hours("""Mon-Tue closed
+
+        Kitchen Hours:
+        W-Thur: 4:30–8:30p
+        Fri-Sat: 4:30-9:15p
+        Sun: 4:30-8:30p""")
+        == "Mo-Tu off; We-Th,Su 16:30-20:30; Fr-Sa 16:30-21:15"
+    )
+    assert (
+        get_hours("""Mon-Tue closed
+        W-Thur: 4:30–8:30p
+        Fri-Sat: 4:30-9:15p
+        Sunday: 4:30-8:30p""")
+        == "Mo-Tu off; We-Th,Su 16:30-20:30; Fr-Sa 16:30-21:15"
+    )
+    assert (
+        get_hours("""Mon, Wed, Thu: 	 11:00 AM - 09:00 PM
+        Fri, Sat: 	 11:00 AM - 09:00 PM
+        Sun:
+	 11:00 AM - 08:00 PM
+        Tue: 	   Closed""")
+        == "Mo,We-Sa 11:00-21:00; Tu off; Su 11:00-20:00"
     )
