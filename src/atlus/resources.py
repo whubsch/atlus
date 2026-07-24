@@ -520,3 +520,80 @@ grid_comp = regex.compile(
 phone_comp = regex.compile(
     r"^\(?(?:\+? ?1?[ -.]*)?(?:\(?(\d{3})\)?[ -.]*)(\d{3})[ -.]*(\d{4})$"
 )
+
+day_expand = {
+    "MONDAY": "Mo",
+    "MON": "Mo",
+    "MO": "Mo",
+    "TUESDAY": "Tu",
+    "TUES": "Tu",
+    "TUE": "Tu",
+    "TU": "Tu",
+    "WEDNESDAY": "We",
+    "WEDS": "We",
+    "WED": "We",
+    "WE": "We",
+    "THURSDAY": "Th",
+    "THURS": "Th",
+    "THUR": "Th",
+    "THU": "Th",
+    "TH": "Th",
+    "FRIDAY": "Fr",
+    "FRI": "Fr",
+    "FR": "Fr",
+    "SATURDAY": "Sa",
+    "SAT": "Sa",
+    "SA": "Sa",
+    "SUNDAY": "Su",
+    "SUN": "Su",
+    "SU": "Su",
+}
+"""Map day names/abbreviations to OSM two-letter day codes."""
+
+day_order = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+"""Canonical OSM day ordering."""
+
+DAY_ALT = "|".join(sorted(day_expand, key=len, reverse=True))
+day_comp = regex.compile(rf"\b(?:{DAY_ALT})\b\.?", flags=regex.IGNORECASE)
+
+day_range_comp = regex.compile(
+    rf"\b(?:{DAY_ALT})\b\.?(?:\s*(?:-|to|\u2013|\u2014)\s*\b(?:{DAY_ALT})\b\.?)?",
+    flags=regex.IGNORECASE,
+)
+
+weekday_comp = regex.compile(r"\bweekdays?\b", flags=regex.IGNORECASE)
+weekend_comp = regex.compile(r"\bweekends?\b", flags=regex.IGNORECASE)
+daily_comp = regex.compile(r"\b(?:daily|every ?day)\b", flags=regex.IGNORECASE)
+closed_comp = regex.compile(r"\b(?:closed|off)\b", flags=regex.IGNORECASE)
+day_24_comp = regex.compile(
+    r"\b(?:24\s*/\s*7|24\s*hours?(?:\s+a\s+day)?|all\s*day|open\s*24)\b",
+    flags=regex.IGNORECASE,
+)
+
+# split a string into multiple top-level rule segments on ";" or newlines
+rule_split_comp = regex.compile(r"\s*;\s*|\r?\n+\s*", flags=regex.IGNORECASE)
+
+# a comma that introduces a brand new day token, used to further split a
+# top-level segment -- only applied when the text before it already looks
+# like it contains time/status information (see _split_comma_days)
+comma_day_comp = regex.compile(rf",\s*(?=(?:{DAY_ALT})\b)", flags=regex.IGNORECASE)
+
+# first place a digit, clock keyword, or the words "closed"/"off"/"24" appear
+# -- everything before this point is assumed to be the "day" portion of a
+# rule segment
+time_start_comp = regex.compile(
+    r"\d|closed|off|noon|midnight|24\s*/\s*7|24\s*hours?|all\s*day",
+    flags=regex.IGNORECASE,
+)
+
+# filler words that may appear in the "day" portion of a segment but carry
+# no day information of their own (e.g. "Open 24 hours")
+filler_comp = regex.compile(r"\b(?:open|hours?|hrs?)\b", flags=regex.IGNORECASE)
+
+time_token_comp = regex.compile(
+    r"^(\d{1,2})(:(\d{2}))?\s*([ap]\.?m\.?)?$", flags=regex.IGNORECASE
+)
+
+time_range_split_comp = regex.compile(
+    r"\s*(?:-|to|\u2013|\u2014)\s*", flags=regex.IGNORECASE
+)

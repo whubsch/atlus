@@ -21,7 +21,7 @@ addresses.
 #
 # SPDX-License-Identifier: MIT
 
-from . import atlus, resources
+from . import atlus, hours, resources
 from .atlus import (
     abbrs,
     get_address,
@@ -32,10 +32,12 @@ from .atlus import (
     remove_br_unicode,
     us_replace,
 )
+from .hours import get_hours
 
 __all__ = [
     "get_address",
     "get_phone",
+    "get_hours",
     "abbrs",
     "get_title",
     "mc_replace",
@@ -43,5 +45,6 @@ __all__ = [
     "ord_replace",
     "remove_br_unicode",
     "atlus",
+    "hours",
     "resources",
 ]
