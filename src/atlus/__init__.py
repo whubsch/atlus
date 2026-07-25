@@ -1,8 +1,8 @@
 """Convert raw address and phone number strings into the OSM format.
 
-`atlus` is a Python package to convert raw address and phone number strings into
-the OSM format. It's designed to be used with US and Canadian phone numbers and
-addresses.
+`atlus` is a Python package to convert raw address, phone number, and opening
+hours strings into the OSM format. It's designed to be used with US and Canadian
+phone numbers and addresses.
 
 ```python
 >>> import atlus
@@ -13,6 +13,8 @@ addresses.
     "addr:state": "CA", "addr:postcode": "98765"}
 >>> atlus.get_phone("(202) 900-9019")
 "+1-202-900-9019"
+>>> atlus.get_hours("Mon-Sun 9-5")
+"Mo-Su 09:00-17:00"
 ```
 
 """

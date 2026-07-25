@@ -462,7 +462,7 @@ def _parse_address(address_string: str) -> tuple[dict[str, str], list[str | None
             0
         ]
         removed = []
-    except usaddress.RepeatedLabelError as err:
+    except usaddress.RepeatedLabelError as err:  # type: ignore[attr-defined]
         collapsed = collapse_list(
             [(i[0].strip(" .,#"), i[1]) for i in err.parsed_string]
         )
@@ -478,7 +478,7 @@ def _validate_and_clean(
     try:
         validated = Address.model_validate(dict(cleaned))
     except ValidationError as err:
-        bad_fields = [each.get("loc", [])[0] for each in err.errors()]
+        bad_fields = [str(each.get("loc", [])[0]) for each in err.errors()]
         cleaned_ret = dict(cleaned)
         for field in bad_fields:
             cleaned_ret.pop(field, None)

@@ -60,7 +60,7 @@ class Day(str, Enum):
     SU = "Su"
 
     @property
-    def index(self) -> int:
+    def weekday_index(self) -> int:
         """Return the day's position in the week, starting with Monday at 0."""
         return list(Day).index(self)
 

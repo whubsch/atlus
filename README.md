@@ -5,7 +5,7 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/atlus)
 ![Pepy Total Downlods](https://img.shields.io/pepy/dt/atlus)
 
-This Python project translates raw address strings into the OpenStreetMap (OSM) tagging scheme. The package only supports US (and to some extent Canadian) addresses. You can try out the package without installing it at [the Atlus website](https://atlus.dev).
+This Python project translates raw address, phone number, and opening hours strings into the OpenStreetMap (OSM) tagging scheme. The package only supports US (and to some extent Canadian) addresses and phone numbers. The opening hours function only supports strings in English. You can try out the package without installing it at [the Atlus website](https://atlus.dev).
 
 > [!NOTE]
 > Use of this package does not absolve you from following OSM's [import guidelines](https://wiki.openstreetmap.org/wiki/Import/Guidelines).
@@ -23,6 +23,7 @@ This Python project translates raw address strings into the OpenStreetMap (OSM) 
 - Parse address parts correctly and reliably.
 - Get rid of address junk that is not needed for OpenStreetMap tagging.
 - Parse US and Canadian phone numbers into the standard format.
+- Convert freeform opening hours strings into the OSM `opening_hours` format.
 
 ## Usage
 
@@ -40,6 +41,8 @@ pip install atlus
 {"addr:housenumber": "789", "addr:street": "Oak Drive", "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
 >>> atlus.get_phone("(202) 900-9019")
 "+1-202-900-9019"
+>>> atlus.get_hours("Mon-Sun 9-5")
+"Mo-Su 09:00-17:00"
 ```
 
 ## Docs

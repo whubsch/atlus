@@ -2,7 +2,7 @@
 
 import regex
 
-from .objects import DayRange, OpeningHours, RuleSet, TimeSpan
+from .objects import Day, DayRange, OpeningHours, RuleSet, TimeSpan
 from .resources import (
     closed_comp,
     comma_day_comp,
@@ -54,9 +54,9 @@ def _parse_days(day_part: str) -> list[DayRange]:
     if daily_comp.search(day_part):
         return []
     if weekday_comp.search(day_part):
-        return [DayRange(start="Mo", end="Fr")]
+        return [DayRange(start=Day("Mo"), end=Day("Fr"))]
     if weekend_comp.search(day_part):
-        return [DayRange(start="Sa", end="Su")]
+        return [DayRange(start=Day("Sa"), end=Day("Su"))]
 
     ranges: list[DayRange] = []
     for token in regex.split(r"\s*,\s*", day_part):
@@ -70,12 +70,12 @@ def _parse_days(day_part: str) -> list[DayRange]:
             end_code = day_expand.get(parts[1].upper())
             if start_code is None or end_code is None:
                 raise ValueError(f"Unrecognized day range: {token!r}")
-            ranges.append(DayRange(start=start_code, end=end_code))
+            ranges.append(DayRange(start=Day(start_code), end=Day(end_code)))
         elif len(parts) == 1:
             code = day_expand.get(parts[0].upper())
             if code is None:
                 raise ValueError(f"Unrecognized day: {token!r}")
-            ranges.append(DayRange(start=code))
+            ranges.append(DayRange(start=Day(code)))
         else:
             raise ValueError(f"Unrecognized day token: {token!r}")
 
@@ -269,9 +269,7 @@ def _has_day_info(segment: str) -> bool:
 
 
 def _merge_day_time_lines(segments: list[str]) -> list[str]:
-    """Merge consecutive top-level segments where days and times are split
-    across separate lines (e.g. a day/day-range on its own line, followed by
-    a line with only the corresponding times).
+    """Merge consecutive top-level day-time segments.
 
     A segment is merged forward into the buffer until a segment containing
     time/status information is seen, since that's what completes the rule.
@@ -398,15 +396,15 @@ def _collapse_days_to_ranges(days: set[str]) -> list[DayRange]:
             run_prev = day
             continue
         ranges.append(
-            DayRange(start=run_start)
-            if run_start == run_prev
-            else DayRange(start=run_start, end=run_prev)
+            DayRange(start=Day(run_start))
+            if run_start != run_prev
+            else DayRange(start=Day(run_start))
         )
         run_start = run_prev = day
     ranges.append(
-        DayRange(start=run_start)
+        DayRange(start=Day(run_start))
         if run_start == run_prev
-        else DayRange(start=run_start, end=run_prev)
+        else DayRange(start=Day(run_start), end=Day(run_prev))
     )
     return ranges
 
@@ -461,6 +459,28 @@ def get_hours(value: str) -> str:
     >>> get_hours("Closed")
     "off"
     ```
+
+    Note:
+        This function has a few quirks to be aware of:
+
+        - Only strings with English day names (and abbreviations) are
+          supported; day names in other languages will not be recognized.
+        - If the same day is mentioned more than once anywhere in the
+          string, the later mention wins and silently overrides the
+          earlier one (e.g. "Mo 09:00-17:00, Mo 10:00-14:00" resolves to
+          just "Mo 10:00-14:00").
+        - If a string contains both a day range and a specific day that
+          overlap (e.g. "Mo-Fr 09:00-17:00, We 10:00-14:00"), the explicit,
+          more specific day definition takes precedence over the range for
+          that day.
+        - Days that are not mentioned anywhere in the input string are
+          simply omitted from the output; they are not assumed to be
+          `off`.
+        - Bare, ambiguous times with no am/pm marker or colon (e.g. "9-5")
+          are assumed to be typical AM-to-PM business hours, so "9-5"
+          resolves to "09:00-17:00" rather than being rejected or resolved
+          another way.
+
 
     Args:
         value (str): The opening hours string to process.
