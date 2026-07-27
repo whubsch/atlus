@@ -275,6 +275,7 @@ def test_resolve_pair_end_resolved_start_ambiguous() -> None:
         ("9-5", TimeSpan(start="09:00", end="17:00")),
         ("9:30am to 5:30pm", TimeSpan(start="09:30", end="17:30")),
         ("22:00-02:00", TimeSpan(start="22:00", end="02:00")),
+        ("22:00-2:00", TimeSpan(start="22:00", end="02:00")),
     ],
 )
 def test_parse_time_span(token: str, expected: TimeSpan) -> None:
@@ -452,87 +453,237 @@ def test_get_hours_exception_days() -> None:
     )
 
 
-def test_get_hours_real_world() -> None:
-    """Test handling of real world raw strings."""
-    assert (
-        get_hours("""Thursday	5–9:30 PM
-    Friday	5–10 PM
-    Saturday	11:30 AM–10 PM
-    Sunday	11:30 AM–9:30 PM
-    Monday	5–9:30 PM
-    Tuesday	5–9:30 PM
-    Wednesday	5–9:30 PM""")
-        == "Mo-Th 17:00-21:30; Fr 17:00-22:00; Sa 11:30-22:00; Su 11:30-21:30"
-    )
-    assert (
-        get_hours("""Thursday10:00 AM - 12:00 AM
+REAL_WORLD_CASES = [
+    pytest.param(
+        """Thursday	5–9:30 PM
+    Friday	5–10 PM
+    Saturday	11:30 AM–10 PM
+    Sunday	11:30 AM–9:30 PM
+    Monday	5–9:30 PM
+    Tuesday	5–9:30 PM
+    Wednesday	5–9:30 PM""",
+        "Mo-Th 17:00-21:30; Fr 17:00-22:00; Sa 11:30-22:00; Su 11:30-21:30",
+        id="tab_separated_days",
+    ),
+    pytest.param(
+        """Thursday10:00 AM - 12:00 AM
     Friday10:00 AM - 1:00 AM
     Saturday10:00 AM - 1:00 AM
     Sunday10:00 AM - 12:00 AM
     Monday10:00 AM - 12:00 AM
     Tuesday10:00 AM - 12:00 AM
-    Wednesday10:00 AM - 12:00 AM""")
-        == "Mo-Th,Su 10:00-00:00; Fr-Sa 10:00-01:00"
-    )
-    assert (
-        get_hours("""Mon 10am - 2pm
+    Wednesday10:00 AM - 12:00 AM""",
+        "Mo-Th,Su 10:00-00:00; Fr-Sa 10:00-01:00",
+        id="no_separator_between_day_and_time",
+    ),
+    pytest.param(
+        """Mon 10am - 2pm
     Tue 10am - 2pm
-    Wed 10am - 2pm""")
-        == "Mo-We 10:00-14:00"
-    )
-    assert (
-        get_hours("Mon 10am - 2pm, Tue 10am - 2pm, Wed 10am - 2pm")
-        == "Mo-We 10:00-14:00"
-    )
-    assert (
-        get_hours("""M-F 11am-10pm
+    Wed 10am - 2pm""",
+        "Mo-We 10:00-14:00",
+        id="newline_separated_days",
+    ),
+    pytest.param(
+        "Mon 10am - 2pm, Tue 10am - 2pm, Wed 10am - 2pm",
+        "Mo-We 10:00-14:00",
+        id="comma_separated_days",
+    ),
+    pytest.param(
+        """M-F 11am-10pm
         Saturday 10am-10pm
-        Sunday 10am-9pm""")
-        == "Mo-Fr 11:00-22:00; Sa 10:00-22:00; Su 10:00-21:00"
-    )
-    assert (
-        get_hours("""
+        Sunday 10am-9pm""",
+        "Mo-Fr 11:00-22:00; Sa 10:00-22:00; Su 10:00-21:00",
+        id="mixed_day_abbreviations",
+    ),
+    pytest.param(
+        """
             Tuesday - Saturday
             04:00 PM - 10:00 PM
             Sunday
             04:00 PM - 09:00 PM
-""")
-        == "Tu-Sa 16:00-22:00; Su 16:00-21:00"
-    )
-    assert (
-        get_hours("""Wed. - Fri.
+""",
+        "Tu-Sa 16:00-22:00; Su 16:00-21:00",
+        id="days_and_times_on_separate_lines",
+    ),
+    pytest.param(
+        """Wed. - Fri.
         11:00 am - 7:45 pm
         Tues., Sat. and Sun.
-        11:00 am - 5:45 pm""")
-        == "Tu,Sa-Su 11:00-17:45; We-Fr 11:00-19:45"
-    )
-    assert (
-        get_hours(
-            "Mon 10am - 2pm, Tue 10am - 2pm, Wed 10am - 2pm, Thu 10am - 2pm, Fri 10am - 2pm, Sat and Sun closed"
-        )
-        == "Mo-Fr 10:00-14:00; Sa-Su off"
-    )
-    assert (
-        get_hours("""Mon-Tue closed
+        11:00 am - 5:45 pm""",
+        "Tu,Sa-Su 11:00-17:45; We-Fr 11:00-19:45",
+        id="days_and_times_on_separate_lines_with_and",
+    ),
+    pytest.param(
+        "Mon 10am - 2pm, Tue 10am - 2pm, Wed 10am - 2pm, Thu 10am - 2pm, Fri 10am - 2pm, Sat and Sun closed",
+        "Mo-Fr 10:00-14:00; Sa-Su off",
+        id="comma_separated_days_with_closed_tail",
+    ),
+    pytest.param(
+        """Mon-Tue closed
 
         Kitchen Hours:
         W-Thur: 4:30–8:30p
         Fri-Sat: 4:30-9:15p
-        Sun: 4:30-8:30p""")
-        == "Mo-Tu off; We-Th,Su 16:30-20:30; Fr-Sa 16:30-21:15"
-    )
-    assert (
-        get_hours("""Mon-Tue closed
+        Sun: 4:30-8:30p""",
+        "Mo-Tu off; We-Th,Su 16:30-20:30; Fr-Sa 16:30-21:15",
+        id="header_line_and_shared_meridiem",
+    ),
+    pytest.param(
+        """Mon-Tue closed
         W-Thur: 4:30–8:30p
         Fri-Sat: 4:30-9:15p
-        Sunday: 4:30-8:30p""")
-        == "Mo-Tu off; We-Th,Su 16:30-20:30; Fr-Sa 16:30-21:15"
-    )
-    assert (
-        get_hours("""Mon, Wed, Thu: 	 11:00 AM - 09:00 PM
+        Sunday: 4:30-8:30p""",
+        "Mo-Tu off; We-Th,Su 16:30-20:30; Fr-Sa 16:30-21:15",
+        id="colon_separated_days_and_shared_meridiem",
+    ),
+    pytest.param(
+        """Mon, Wed, Thu: 	 11:00 AM - 09:00 PM
         Fri, Sat: 	 11:00 AM - 09:00 PM
         Sun:
 	 11:00 AM - 08:00 PM
-        Tue: 	   Closed""")
-        == "Mo,We-Sa 11:00-21:00; Tu off; Su 11:00-20:00"
-    )
+        Tue: 	   Closed""",
+        "Mo,We-Sa 11:00-21:00; Tu off; Su 11:00-20:00",
+        id="comma_separated_days_with_colon_and_out_of_order_closed",
+    ),
+    pytest.param(
+        """Monday
+
+            11 AM–2:30 PM
+            5–10 PM
+
+        Tuesday
+
+            11 AM–2:30 PM
+            5–10 PM
+
+        Wednesday
+
+            11 AM–2:30 PM
+            5–10 PM
+
+        Thursday
+
+            11 AM–2:30 PM
+            5–10 PM
+
+        Friday
+
+            11 AM–2:30 PM
+            5–10 PM
+
+        Saturday
+
+            10 AM–2:30 PM
+            5–10 PM
+
+        Sunday
+
+            10 AM–2:30 PM
+            5–10 PM""",
+        "Mo-Fr 11:00-14:30,17:00-22:00; Sa-Su 10:00-14:30,17:00-22:00",
+        id="day_then_multiple_time_spans_on_following_lines",
+    ),
+    pytest.param(
+        """Mon–Thu 5:30 PM–9:30 PM · Fri 5 PM–10 PM · Sat 11 AM–2:30 PM, 5 PM–10 PM · Sun 11 AM–2:30 PM, 5 PM–9 PM""",
+        "Mo-Th 17:30-21:30; Fr 17:00-22:00; Sa 11:00-14:30,17:00-22:00; Su 11:00-14:30,17:00-21:00",
+        id="middle_dot_separated_rules",
+    ),
+    pytest.param(
+        """Mon–Thu 5:30 PM–9:30 PM • Fri 5 PM–10 PM • Sat 11 AM–2:30 PM, 5 PM–10 PM • Sun 11 AM–2:30 PM, 5 PM–9 PM""",
+        "Mo-Th 17:30-21:30; Fr 17:00-22:00; Sa 11:00-14:30,17:00-22:00; Su 11:00-14:30,17:00-21:00",
+        id="bullet_separated_rules",
+    ),
+    pytest.param(
+        """Thursday: 5:00pm – 12:00am
+        Friday: 5:00pm – 3:00am
+        Saturday: 11:00am – 3:00am
+        Sunday: 11:00am – 12:00am
+        Closed Monday – Wednesday """,
+        "Mo-We off; Th 17:00-00:00; Fr 17:00-03:00; Sa 11:00-03:00; Su 11:00-00:00",
+        id="closed_day_range_stated_after_open_days",
+    ),
+    pytest.param(
+        """Monday - Friday
+       11 am - 2.30 pm
+       5 pm - 10 pm
+
+       Saturday and Sunday
+       11 am - 10 pm """,
+        "Mo-Fr 11:00-14:30,17:00-22:00; Sa-Su 11:00-22:00",
+        id="period_as_minute_separator",
+    ),
+    pytest.param(
+        """Monday - Friday
+       11 am - 2h30 pm
+       5 pm - 10 pm
+
+       Saturday and Sunday
+       11 am - 10 pm """,
+        "Mo-Fr 11:00-14:30,17:00-22:00; Sa-Su 11:00-22:00",
+        id="h_as_minute_separator",
+    ),
+    pytest.param(
+        """Monday - Friday
+       1100 - 1430
+       1700 - 2200
+
+       Saturday and Sunday
+       1100 - 2200 """,
+        "Mo-Fr 11:00-14:30,17:00-22:00; Sa-Su 11:00-22:00",
+        id="no_minute_separator",
+    ),
+    pytest.param(
+        """
+            Tuesday - Thursday
+            11:00 AM - 03:00 PM
+            05:00 PM - 09:00 PM
+            Friday
+            12:00 PM - 10:00 PM
+            Saturday - Sunday
+            12:00 PM - 09:00 PM
+""",
+        "Tu-Th 11:00-15:00,17:00-21:00; Fr 12:00-22:00; Sa-Su 12:00-21:00",
+        id="day_range_then_multiple_time_spans_then_more_day_ranges",
+    ),
+    pytest.param(
+        "Mo-Th 1030-0100, Fr-Sa 1030-0200",
+        "Mo-Th 10:30-01:00; Fr-Sa 10:30-02:00",
+        id="military_time",
+    ),
+    pytest.param(
+        "Mo-Fr 08:00-21:00 Sa-Su 08:00-18:00",
+        "Mo-Fr 08:00-21:00; Sa-Su 08:00-18:00",
+        id="no_separator",
+    ),
+    pytest.param(
+        "08:00AM-06:00PM Monday-Friday; 08:00AM-01:00PM Saturday",
+        "Mo-Fr 08:00-18:00; Sa 08:00-13:00",
+        id="times_first",
+    ),
+    pytest.param(
+        "Fri - Sat 5:00pm - 10:00pm Last Seating / Sun - Thurs 5:00pm - 9:00pm Last Seating",
+        "Mo-Th,Su 17:00-21:00; Fr-Sa 17:00-22:00",
+        id="last_seating",
+    ),
+    pytest.param(
+        """Monday Through Thursday
+        5pm–9pm
+
+        Friday & Saturday
+        5pm–9:30pm""",
+        "Mo-Th 17:00-21:00; Fr-Sa 17:00-21:30",
+        id="through",
+    ),
+    pytest.param(
+        """Monday-Thursday
+        11:30am-3pm, 3pm-5pm, 5pm-9:30pm""",
+        "Mo-Th 11:30-21:30",
+        id="merge_windows",
+    ),
+]
+
+
+@pytest.mark.parametrize(("raw", "expected"), REAL_WORLD_CASES)
+def test_get_hours_real_world(raw: str, expected: str) -> None:
+    """Test handling of real world raw strings."""
+    assert get_hours(raw) == expected

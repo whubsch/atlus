@@ -10,9 +10,14 @@ from .resources import (
     day_24_comp,
     day_comp,
     day_expand,
+    day_index,
+    day_present_comp,
     day_order,
+    day_range_comp,
     filler_comp,
+    ignored_phrase_comp,
     rule_split_comp,
+    space_day_comp,
     time_range_split_comp,
     time_start_comp,
     time_token_comp,
@@ -31,6 +36,9 @@ def _normalize(value: str) -> str:
         str: The normalized string.
     """
     value = value.replace("&", ",").replace("and", ",")
+    # drop phrases that carry no day/time information of their own (e.g.
+    # "Last Seating") before any other parsing happens
+    value = ignored_phrase_comp.sub("", value)
     # collapse horizontal whitespace only -- newlines are meaningful rule
     # separators and are handled by rule_split_comp
     value = regex.sub(r"[ \t]+", " ", value)
@@ -213,6 +221,29 @@ def _parse_time_span(token: str) -> TimeSpan:
     return TimeSpan(start=start_str, end=end_str)
 
 
+def _merge_time_spans(spans: list[TimeSpan]) -> list[TimeSpan]:
+    """Merge adjacent time spans where one ends exactly when the next
+    starts (e.g. "11:30-15:00,15:00-17:00" -> "11:30-17:00"), since such
+    back-to-back windows represent one continuous open period.
+
+    Args:
+        spans (list[TimeSpan]): The time spans to merge, in input order.
+
+    Returns:
+        list[TimeSpan]: The merged time spans.
+    """
+    if not spans:
+        return spans
+
+    merged = [spans[0]]
+    for span in spans[1:]:
+        if span.start == merged[-1].end:
+            merged[-1] = TimeSpan(start=merged[-1].start, end=span.end)
+        else:
+            merged.append(span)
+    return merged
+
+
 def _parse_times(time_part: str) -> list[TimeSpan]:
     """Parse the "time" portion of a rule segment into a list of TimeSpan.
 
@@ -223,7 +254,7 @@ def _parse_times(time_part: str) -> list[TimeSpan]:
         list[TimeSpan]: The parsed time spans.
     """
     tokens = [t for t in regex.split(r"\s*,\s*", time_part.strip(" ,")) if t]
-    return [_parse_time_span(token) for token in tokens]
+    return _merge_time_spans([_parse_time_span(token) for token in tokens])
 
 
 def _split_comma_days(text: str) -> list[str]:
@@ -250,6 +281,33 @@ def _split_comma_days(text: str) -> list[str]:
     return [segment for segment in results if segment.strip()]
 
 
+def _split_space_days(text: str) -> list[str]:
+    """Split a top-level segment on whitespace that introduces a new day
+    group, when there's no punctuation separating adjacent rules at all
+    (e.g. "Mo-Fr 08:00-21:00 Sa-Su 08:00-18:00").
+
+    Like `_split_comma_days`, a day token only starts a new rule segment if
+    the text since the last split point already looks like a complete
+    day+time rule -- otherwise it's just part of the day range/phrase
+    currently being read (e.g. the "Friday" in "Monday - Friday").
+
+    Args:
+        text (str): The top-level segment to split.
+
+    Returns:
+        list[str]: The resulting sub-segments.
+    """
+    results = []
+    last = 0
+    for match in space_day_comp.finditer(text):
+        candidate = text[last : match.start()]
+        if time_start_comp.search(candidate) and _has_day_info(candidate):
+            results.append(text[last : match.start()])
+            last = match.end()
+    results.append(text[last:])
+    return [segment for segment in results if segment.strip()]
+
+
 def _has_day_info(segment: str) -> bool:
     """Check whether a segment contains any recognizable day reference.
 
@@ -261,7 +319,7 @@ def _has_day_info(segment: str) -> bool:
         keyword such as "weekdays" or "daily".
     """
     return bool(
-        day_comp.search(segment)
+        day_present_comp.search(segment)
         or weekday_comp.search(segment)
         or weekend_comp.search(segment)
         or daily_comp.search(segment)
@@ -271,35 +329,59 @@ def _has_day_info(segment: str) -> bool:
 def _merge_day_time_lines(segments: list[str]) -> list[str]:
     """Merge consecutive top-level segments where days and times are split
     across separate lines (e.g. a day/day-range on its own line, followed by
-    a line with only the corresponding times).
+    one or more lines with only the corresponding times -- as with a
+    lunch/dinner split written on separate lines).
 
-    A segment is merged forward into the buffer until a segment containing
-    time/status information is seen, since that's what completes the rule.
-    Segments that contain neither day nor time/status information (e.g. a
-    stray section header like "Kitchen Hours:") are treated as noise and
-    dropped, rather than being merged into an adjacent rule.
+    A day-only line starts a new group, and any number of time-only lines
+    that follow are attached to it (comma-joined) until the next day-only
+    line or a fully self-contained day+time line appears. Segments that
+    contain neither day nor time/status information (e.g. a stray section
+    header like "Kitchen Hours:") are treated as noise and dropped.
 
     Args:
         segments (list[str]): The top-level segments, as split on rule
             separators (";" or newlines).
 
     Returns:
-        list[str]: The segments, with day-only/time-only line pairs merged
+        list[str]: The segments, with day-only/time-only line groups merged
         and irrelevant noise lines removed.
     """
     merged: list[str] = []
-    buffer: str | None = None
+    current_days: str | None = None
+    current_times: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_days, current_times
+        if current_days is not None:
+            body = ",".join(current_times)
+            merged.append(f"{current_days} {body}".strip() if body else current_days)
+        current_days = None
+        current_times = []
+
     for segment in segments:
         has_time = bool(time_start_comp.search(segment))
-        if not has_time and not _has_day_info(segment):
+        has_day = _has_day_info(segment)
+        if not has_time and not has_day:
             # noise line (no day or time info) -- drop it
             continue
-        buffer = segment if buffer is None else f"{buffer} {segment}"
-        if has_time:
-            merged.append(buffer)
-            buffer = None
-    if buffer is not None:
-        merged.append(buffer)
+        if has_day and has_time:
+            # a fully self-contained day+time line
+            flush()
+            merged.append(segment)
+        elif has_day:
+            # a day (range) on its own line, awaiting time(s) below
+            flush()
+            current_days = segment
+        elif current_days is not None:
+            # a time-only line -- attach to the day currently being built
+            current_times.append(segment)
+        elif merged:
+            # a stray time-only continuation of the last completed rule
+            merged[-1] = f"{merged[-1]},{segment}"
+        else:
+            merged.append(segment)
+
+    flush()
     return merged
 
 
@@ -312,11 +394,34 @@ def _split_day_time(segment: str) -> tuple[str, str]:
     Returns:
         tuple[str, str]: The day portion and the time/status portion.
     """
+    stripped = segment.strip()
+
+    # handle the reversed "Closed Monday - Wednesday" phrasing, where the
+    # status keyword precedes the days it applies to instead of following
+    # them -- swap the two parts so the days are parsed as days
+    closed_match = closed_comp.match(stripped)
+    if closed_match:
+        remainder = stripped[closed_match.end() :].strip(" ,")
+        if _has_day_info(remainder):
+            return remainder, stripped[: closed_match.end()]
+
     match = time_start_comp.search(segment)
     if not match:
         # no digits/status keywords found -- treat whole thing as days,
         # implying it's open with no specified times (unusual, but handled)
         return segment.strip(), ""
+
+    day_match = day_comp.search(segment)
+    if day_match and day_match.start() > match.start():
+        # the times come first, followed by the day(s) they apply to (e.g.
+        # "08:00AM-06:00PM Monday-Friday") -- pull out the day range/name
+        # from wherever it appears and treat everything else as the times
+        clause_match = day_range_comp.match(segment, day_match.start())
+        if clause_match:
+            day_part = clause_match.group()
+            time_part = segment[: clause_match.start()] + segment[clause_match.end() :]
+            return day_part.strip(), time_part.strip()
+
     return segment[: match.start()].strip(), segment[match.start() :].strip()
 
 
@@ -368,8 +473,8 @@ def _expand_days(day_ranges: list[DayRange]) -> list[str]:
 
     days: list[str] = []
     for day_range in day_ranges:
-        start_idx = day_order.index(day_range.start.value)
-        end_idx = day_order.index(day_range.end.value) if day_range.end else start_idx
+        start_idx = day_index[day_range.start.value]
+        end_idx = day_index[day_range.end.value] if day_range.end else start_idx
         if end_idx >= start_idx:
             days.extend(day_order[start_idx : end_idx + 1])
         else:
@@ -393,9 +498,12 @@ def _collapse_days_to_ranges(days: set[str]) -> list[DayRange]:
 
     ranges: list[DayRange] = []
     run_start = run_prev = ordered[0]
+    run_prev_idx = day_index[run_prev]
     for day in ordered[1:]:
-        if day_order.index(day) == day_order.index(run_prev) + 1:
+        day_idx = day_index[day]
+        if day_idx == run_prev_idx + 1:
             run_prev = day
+            run_prev_idx = day_idx
             continue
         ranges.append(
             DayRange(start=run_start)
@@ -403,6 +511,7 @@ def _collapse_days_to_ranges(days: set[str]) -> list[DayRange]:
             else DayRange(start=run_start, end=run_prev)
         )
         run_start = run_prev = day
+        run_prev_idx = day_idx
     ranges.append(
         DayRange(start=run_start)
         if run_start == run_prev
@@ -446,7 +555,7 @@ def _coalesce_rules(rules: list[RuleSet]) -> list[RuleSet]:
         )
         for sig, days in sig_to_days.items()
     ]
-    merged.sort(key=lambda rule: day_order.index(rule.days[0].start.value))
+    merged.sort(key=lambda rule: day_index[rule.days[0].start.value])
     return merged
 
 
@@ -475,14 +584,16 @@ def get_hours(value: str) -> str:
     if not normalized:
         raise ValueError("Empty opening hours string.")
 
-    if closed_comp.fullmatch(normalized.strip()):
+    stripped = normalized.strip()
+    if closed_comp.fullmatch(stripped):
         return "off"
-    if day_24_comp.fullmatch(normalized.strip()):
+    if day_24_comp.fullmatch(stripped):
         return "24/7"
 
     top_segments = [s for s in rule_split_comp.split(normalized) if s.strip()]
     top_segments = _merge_day_time_lines(top_segments)
     segments = [sub for top in top_segments for sub in _split_comma_days(top)]
+    segments = [sub for seg in segments for sub in _split_space_days(seg)]
     rules = [_parse_segment(segment) for segment in segments]
 
     # only coalesce/reorder when every rule specifies explicit days -- if any

@@ -556,11 +556,21 @@ day_expand = {
 day_order = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 """Canonical OSM day ordering."""
 
+day_index = {day: i for i, day in enumerate(day_order)}
+"""Map day codes to their position in the week, for fast O(1) lookups."""
+
 DAY_ALT = "|".join(sorted(day_expand, key=len, reverse=True))
 day_comp = regex.compile(rf"\b(?:{DAY_ALT})\b\.?", flags=regex.IGNORECASE)
 
+# looser day-name detector that also matches when a day name is glued
+# directly to a following digit with no separator (e.g. "Friday10:00 AM"),
+# used only to detect the *presence* of day info rather than to extract it
+day_present_comp = regex.compile(
+    rf"\b(?:{DAY_ALT})(?![a-zA-Z])", flags=regex.IGNORECASE
+)
+
 day_range_comp = regex.compile(
-    rf"\b(?:{DAY_ALT})\b\.?(?:\s*(?:-|to|\u2013|\u2014)\s*\b(?:{DAY_ALT})\b\.?)?",
+    rf"\b(?:{DAY_ALT})\b\.?(?:\s*(?:-|to|through|\u2013|\u2014)\s*\b(?:{DAY_ALT})\b\.?)?",
     flags=regex.IGNORECASE,
 )
 
@@ -573,13 +583,36 @@ day_24_comp = regex.compile(
     flags=regex.IGNORECASE,
 )
 
-# split a string into multiple top-level rule segments on ";" or newlines
-rule_split_comp = regex.compile(r"\s*;\s*|\r?\n+\s*", flags=regex.IGNORECASE)
+# split a string into multiple top-level rule segments on ";", newlines, a
+# middle dot ("·") or bullet ("•"), or a slash surrounded by whitespace,
+# which are sometimes used as rule separators -- the whitespace requirement
+# on the slash keeps it from splitting compact forms like "24/7"
+rule_split_comp = regex.compile(
+    r"\s*;\s*|\r?\n+\s*|\s*[\u00b7\u2022]\s*|\s+/\s+", flags=regex.IGNORECASE
+)
+
+# phrases that carry no day/time information of their own and should be
+# discarded entirely wherever they appear (e.g. "Last Seating" following a
+# closing time)
+ignored_phrase_comp = regex.compile(
+    r"\b(last seatings?|last call)\b", flags=regex.IGNORECASE
+)
 
 # a comma that introduces a brand new day token, used to further split a
 # top-level segment -- only applied when the text before it already looks
 # like it contains time/status information (see _split_comma_days)
 comma_day_comp = regex.compile(rf",\s*(?=(?:{DAY_ALT})\b)", flags=regex.IGNORECASE)
+
+# whitespace (with no comma/semicolon/etc.) that introduces a brand new day
+# token, used to split adjacent rules that have no separator between them
+# at all (e.g. "Mo-Fr 08:00-21:00 Sa-Su 08:00-18:00") -- only applied when
+# the text before it already looks like a complete day+time rule (see
+# _split_space_days), and not when the day word is part of a day range or
+# "... to ..." phrase that's already being parsed (e.g. "Monday - Friday")
+space_day_comp = regex.compile(
+    rf"(?<![-\u2013\u2014,])(?<!\bto)(?<!\bthrough)\s+(?=(?:{DAY_ALT})\b\.?)",
+    flags=regex.IGNORECASE,
+)
 
 # first place a digit, clock keyword, or the words "closed"/"off"/"24" appear
 # -- everything before this point is assumed to be the "day" portion of a
@@ -594,9 +627,9 @@ time_start_comp = regex.compile(
 filler_comp = regex.compile(r"\b(?:open|hours?|hrs?)\b", flags=regex.IGNORECASE)
 
 time_token_comp = regex.compile(
-    r"^(\d{1,2})(:(\d{2}))?\s*([ap]\.?m?\.?)?$", flags=regex.IGNORECASE
+    r"^(\d{1,2})([:.h]?(\d{2}))?\s*([ap]\.?m?\.?)?$", flags=regex.IGNORECASE
 )
 
 time_range_split_comp = regex.compile(
-    r"\s*(?:-|to|\u2013|\u2014)\s*", flags=regex.IGNORECASE
+    r"\s*(?:-|to|through|\u2013|\u2014)\s*", flags=regex.IGNORECASE
 )
