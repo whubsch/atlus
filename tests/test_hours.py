@@ -8,6 +8,9 @@ from pydantic import ValidationError
 from src.atlus.hours import (
     _normalize,
     _parse_days,
+    _parse_point_segment,
+    _parse_point_time,
+    _parse_point_times,
     _parse_segment,
     _parse_single_time,
     _parse_time_span,
@@ -15,8 +18,17 @@ from src.atlus.hours import (
     _resolve_pair,
     _split_day_time,
     get_hours,
+    get_times,
 )
-from src.atlus.objects import Day, DayRange, OpeningHours, RuleSet, TimeSpan
+from src.atlus.objects import (
+    Day,
+    DayRange,
+    OpeningHours,
+    PointRuleSet,
+    PointTimes,
+    RuleSet,
+    TimeSpan,
+)
 
 # ---------------------------------------------------------------------------
 # Object model tests
@@ -432,6 +444,114 @@ def test_get_hours_single_day_abbreviation() -> None:
     assert get_hours("Su 10:00-16:00") == "Su 10:00-16:00"
 
 
+# ---------------------------------------------------------------------------
+# Point-in-time (collection_times/service_times) object model tests
+# ---------------------------------------------------------------------------
+
+
+def test_point_rule_set_to_osm() -> None:
+    """Test PointRuleSet.to_osm formatting."""
+    rule = PointRuleSet(
+        days=[DayRange(start=Day.MO, end=Day.FR)], times=["15:00", "18:00"]
+    )
+    assert rule.to_osm() == "Mo-Fr 15:00,18:00"
+
+
+def test_point_rule_set_no_days() -> None:
+    """Test PointRuleSet.to_osm with no days specified."""
+    assert PointRuleSet(times=["15:00"]).to_osm() == "15:00"
+
+
+def test_point_rule_set_invalid_time_raises() -> None:
+    """Test PointRuleSet rejects malformed time strings."""
+    with pytest.raises(ValidationError):
+        PointRuleSet(times=["3:00 pm"])
+
+
+def test_point_times_to_osm() -> None:
+    """Test PointTimes.to_osm joins multiple rules with '; '."""
+    result = PointTimes(
+        rules=[
+            PointRuleSet(
+                days=[DayRange(start=Day.MO, end=Day.FR)], times=["15:00", "18:00"]
+            ),
+            PointRuleSet(days=[DayRange(start=Day.SA)], times=["15:00"]),
+        ]
+    ).to_osm()
+    assert result == "Mo-Fr 15:00,18:00; Sa 15:00"
+
+
+def test_point_times_empty_rules_raises() -> None:
+    """Test PointTimes rejects an empty rule list."""
+    with pytest.raises(ValidationError):
+        PointTimes(rules=[])
+
+
+# ---------------------------------------------------------------------------
+# Point-in-time parsing tests
+# ---------------------------------------------------------------------------
+
+
+def test_parse_point_time_24h() -> None:
+    """Test parsing an already-24-hour point time."""
+    assert _parse_point_time("15:00") == "15:00"
+
+
+def test_parse_point_time_am_pm() -> None:
+    """Test parsing 12-hour am/pm point times."""
+    assert _parse_point_time("3pm") == "15:00"
+    assert _parse_point_time("10:30am") == "10:30"
+
+
+def test_parse_point_time_bare_digit() -> None:
+    """Test a bare digit with no colon/meridiem is taken at face value."""
+    assert _parse_point_time("15") == "15:00"
+
+
+def test_parse_point_times_sorted_and_deduped() -> None:
+    """Test that point times are sorted and de-duplicated."""
+    assert _parse_point_times("18:00, 15:00, 15:00") == ["15:00", "18:00"]
+
+
+def test_parse_point_segment() -> None:
+    """Test parsing a full day+time point segment."""
+    rule = _parse_point_segment("Mo-Fr 15:00,18:00")
+    assert rule.days == [DayRange(start=Day.MO, end=Day.FR)]
+    assert rule.times == ["15:00", "18:00"]
+
+
+# ---------------------------------------------------------------------------
+# get_times tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_times_doc_example() -> None:
+    """Test the collection_times-style example with multiple rules."""
+    result = get_times("Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00")
+    assert result == "Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00"
+
+
+def test_get_times_am_pm() -> None:
+    """Test 12-hour am/pm point times are converted to 24-hour."""
+    assert get_times("Monday to Friday 3pm and 6pm") == "Mo-Fr 15:00,18:00"
+
+
+def test_get_times_no_days() -> None:
+    """Test a bare list of times with no day prefix."""
+    assert get_times("15:00,18:00") == "15:00,18:00"
+
+
+def test_get_times_coalesces_identical_days() -> None:
+    """Test that identical per-day rules coalesce into a day range."""
+    assert get_times("Mo-Su 15:00") == "Mo-Su 15:00"
+
+
+def test_get_times_empty_string_raises() -> None:
+    """Test that an empty string raises ValueError."""
+    with pytest.raises(ValueError, match="Empty collection/service times"):
+        get_times("")
+
+
 def test_get_hours_mixed_case_input() -> None:
     """Test that mixed-case day/time text is handled."""
     assert get_hours("mON-fRI 8AM-5PM") == "Mo-Fr 08:00-17:00"
@@ -453,7 +573,7 @@ def test_get_hours_exception_days() -> None:
     )
 
 
-REAL_WORLD_CASES = [
+REAL_WORLD_HOURS_CASES = [
     pytest.param(
         """Thursday	5–9:30 PM
     Friday	5–10 PM
@@ -680,10 +800,63 @@ REAL_WORLD_CASES = [
         "Mo-Th 11:30-21:30",
         id="merge_windows",
     ),
+    pytest.param(
+        "Mon - Fri: 8:00am - 5:00pm Sat & Sun: Closed",
+        "Mo-Fr 08:00-17:00; Sa-Su off",
+        id="no_separator",
+    ),
+    pytest.param(
+        "Mon - Thur 12pm-9pm Fri & Sat 12pm-10pm Sun CLOSED",
+        "Mo-Th 12:00-21:00; Fr-Sa 12:00-22:00; Su off",
+        id="no_separator_2",
+    ),
+    pytest.param(
+        "Mon - Thur 12pm-9pm | Fri & Sat 12pm-10pm | Sun CLOSED",
+        "Mo-Th 12:00-21:00; Fr-Sa 12:00-22:00; Su off",
+        id="pipe_separator",
+    ),
+    pytest.param(
+        "Mo-Su 09:00-13:00 Mo-Su 16:30-20:30",
+        "Mo-Su 09:00-13:00,16:30-20:30",
+        id="multi_window",
+    ),
+    pytest.param(
+        "Mo-Fr 08:00-20:00; Sa 09:00--18:00; Su 11:00-16:00",
+        "Mo-Fr 08:00-20:00; Sa 09:00-18:00; Su 11:00-16:00",
+        id="double_dash",
+    ),
+    pytest.param("We/Sa 12:00-17:00", "We,Sa 12:00-17:00", id="slash_separator"),
+    pytest.param("8am a 7pm", "08:00-19:00", id="a_separator"),
+    pytest.param(
+        "Domingo a domingo 6:00 am -6:00 pm", "06:00-18:00", id="domingo_a_domingo"
+    ),
 ]
 
 
-@pytest.mark.parametrize(("raw", "expected"), REAL_WORLD_CASES)
+@pytest.mark.parametrize(("raw", "expected"), REAL_WORLD_HOURS_CASES)
 def test_get_hours_real_world(raw: str, expected: str) -> None:
     """Test handling of real world raw strings."""
     assert get_hours(raw) == expected
+
+
+REAL_WORLD_TIMES_CASES = [
+    pytest.param("11am", "11:00", id="basic"),
+    pytest.param("9:00 AM & 11:00 AM", "09:00,11:00", id="double"),
+    pytest.param("Monday - Saturday, 10:00 AM", "Mo-Sa 10:00", id="all_week"),
+    pytest.param(
+        "Saturday 10:00 AM, Sunday 9:00 AM & 11:00 AM",
+        "Sa 10:00; Su 09:00,11:00",
+        id="days",
+    ),
+    pytest.param(
+        "Sat. 4:30 pm; Sundays at 7:45 am; 9:30 am; 11 am; 12:30 pm; 5:30 pm",
+        "Sa 16:30; Su 07:45,09:30,11:00,12:30,17:30",
+        id="days",
+    ),
+]
+
+
+@pytest.mark.parametrize(("raw", "expected"), REAL_WORLD_TIMES_CASES)
+def test_get_times_real_world(raw: str, expected: str) -> None:
+    """Test handling of real world raw strings."""
+    assert get_times(raw) == expected

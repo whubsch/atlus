@@ -2,6 +2,7 @@
 
 from enum import Enum
 
+import regex
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -163,6 +164,88 @@ class RuleSet(BaseModel):
         else:
             body = ",".join(t.to_osm() for t in self.times)
         return f"{days_str} {body}".strip() if days_str else body
+
+
+class PointRuleSet(BaseModel):
+    """A single point-in-time rule: a set of days and specific clock times.
+
+    Used for tags like `collection_times`/`service_times` that record
+    single points in time rather than open/close ranges.
+    """
+
+    days: list[DayRange] = Field(
+        default_factory=list,
+        description="The day or days that this rule applies to. An empty"
+        " list means the rule applies every day of the week.",
+    )
+    times: list[str] = Field(
+        default_factory=list,
+        description="The point-in-time value(s), in 24-hour `HH:MM` format.",
+        examples=["15:00"],
+    )
+
+    @field_validator("times")
+    @classmethod
+    def _check_time_format(cls, value: list[str]) -> list[str]:
+        """Ensure every time value is a valid 24-hour `HH:MM` string."""
+        pattern = regex.compile(r"^([01]\d|2[0-4]):[0-5]\d$")
+        for time in value:
+            if not pattern.match(time):
+                raise ValueError(f"Invalid time format: {time!r}")
+        return value
+
+    def to_osm(self) -> str:
+        """Render the rule in OSM point-in-time syntax.
+
+        ```python
+        >>> PointRuleSet(
+        ...     days=[DayRange(start=Day.MO, end=Day.FR)],
+        ...     times=["15:00", "18:00"],
+        ... ).to_osm()
+        "Mo-Fr 15:00,18:00"
+        ```
+        """
+        days_str = ",".join(d.to_osm() for d in self.days)
+        body = ",".join(self.times)
+        return f"{days_str} {body}".strip() if days_str else body
+
+
+class PointTimes(BaseModel):
+    """A full point-in-time value (e.g. `collection_times`) made of one or
+    more rules.
+    """
+
+    rules: list[PointRuleSet] = Field(
+        default_factory=list,
+        description="The ordered list of rules that make up the full value.",
+    )
+
+    @field_validator("rules")
+    @classmethod
+    def _check_not_empty(cls, value: list[PointRuleSet]) -> list[PointRuleSet]:
+        """Ensure at least one rule is present."""
+        if not value:
+            raise ValueError("PointTimes must contain at least one rule.")
+        return value
+
+    def to_osm(self) -> str:
+        """Render the full value in OSM point-in-time syntax.
+
+        ```python
+        >>> PointTimes(rules=[
+        ...     RuleSet := PointRuleSet(
+        ...         days=[DayRange(start=Day.MO, end=Day.FR)],
+        ...         times=["15:00", "18:00"],
+        ...     ),
+        ...     PointRuleSet(
+        ...         days=[DayRange(start=Day.SA)],
+        ...         times=["15:00"],
+        ...     ),
+        ... ]).to_osm()
+        "Mo-Fr 15:00,18:00; Sa 15:00"
+        ```
+        """
+        return "; ".join(r.to_osm() for r in self.rules)
 
 
 class OpeningHours(BaseModel):

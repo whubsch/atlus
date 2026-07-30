@@ -526,30 +526,66 @@ day_expand = {
     "MON": "Mo",
     "MO": "Mo",
     "M": "Mo",
+    "MONDAYS": "Mo",
     "TUESDAY": "Tu",
     "TUES": "Tu",
     "TUE": "Tu",
     "TU": "Tu",
+    "TUESDAYS": "Tu",
     "WEDNESDAY": "We",
     "WEDS": "We",
     "WED": "We",
     "WE": "We",
     "W": "We",
+    "WEDNESDAYS": "We",
     "THURSDAY": "Th",
     "THURS": "Th",
     "THUR": "Th",
     "THU": "Th",
+    "THR": "Th",
     "TH": "Th",
+    "THURSDAYS": "Th",
     "FRIDAY": "Fr",
     "FRI": "Fr",
     "FR": "Fr",
     "F": "Fr",
+    "FRIDAYS": "Fr",
     "SATURDAY": "Sa",
     "SAT": "Sa",
     "SA": "Sa",
+    "SATS": "Sa",
+    "SATURDAYS": "Sa",
     "SUNDAY": "Su",
     "SUN": "Su",
     "SU": "Su",
+    "SUNDAYS": "Su",
+    "SUNS": "Su",
+    # Spanish
+    "LUNES": "Mo",
+    "MARTES": "Tu",
+    "MIERCOLES": "We",
+    "MIÉRCOLES": "We",
+    "JUEVES": "Th",
+    "VIERNES": "Fr",
+    "SABADO": "Sa",
+    "SÁBADO": "Sa",
+    "DOMINGO": "Su",
+    # French
+    "LUNDI": "Mo",
+    "MARDI": "Tu",
+    "MERCREDI": "We",
+    "JEUDI": "Th",
+    "VENDREDI": "Fr",
+    "SAMEDI": "Sa",
+    "DIMANCHE": "Su",
+    # German
+    "MONTAG": "Mo",
+    "DIENSTAG": "Tu",
+    "MITTWOCH": "We",
+    "DONNERSTAG": "Th",
+    "FREITAG": "Fr",
+    "SAMSTAG": "Sa",
+    "SONNTAG": "Su",
 }
 """Map day names/abbreviations to OSM two-letter day codes."""
 
@@ -570,7 +606,7 @@ day_present_comp = regex.compile(
 )
 
 day_range_comp = regex.compile(
-    rf"\b(?:{DAY_ALT})\b\.?(?:\s*(?:-|to|through|\u2013|\u2014)\s*\b(?:{DAY_ALT})\b\.?)?",
+    rf"\b(?:{DAY_ALT})\b\.?(?:\s*(?:-|to|through|thru|a|\u2013|\u2014|\u2015)\s*\b(?:{DAY_ALT})\b\.?)?",
     flags=regex.IGNORECASE,
 )
 
@@ -584,11 +620,12 @@ day_24_comp = regex.compile(
 )
 
 # split a string into multiple top-level rule segments on ";", newlines, a
-# middle dot ("·") or bullet ("•"), or a slash surrounded by whitespace,
-# which are sometimes used as rule separators -- the whitespace requirement
-# on the slash keeps it from splitting compact forms like "24/7"
+# middle dot ("·") or bullet ("•"), a slash surrounded by whitespace, or a
+# pipe, which are sometimes used as rule separators -- the whitespace
+# requirement on the slash keeps it from splitting compact forms like "24/7"
 rule_split_comp = regex.compile(
-    r"\s*;\s*|\r?\n+\s*|\s*[\u00b7\u2022]\s*|\s+/\s+", flags=regex.IGNORECASE
+    r"\s*;\s*|\r?\n+\s*|\s*[\u00b7\u2022\u2016\u00A6]\s*|\s+/\s+|\s*\|\s*",
+    flags=regex.IGNORECASE,
 )
 
 # phrases that carry no day/time information of their own and should be
@@ -610,7 +647,7 @@ comma_day_comp = regex.compile(rf",\s*(?=(?:{DAY_ALT})\b)", flags=regex.IGNORECA
 # _split_space_days), and not when the day word is part of a day range or
 # "... to ..." phrase that's already being parsed (e.g. "Monday - Friday")
 space_day_comp = regex.compile(
-    rf"(?<![-\u2013\u2014,])(?<!\bto)(?<!\bthrough)\s+(?=(?:{DAY_ALT})\b\.?)",
+    rf"(?<![-\u2013\u2014,])(?<!\bto)(?<!\bthr(ough|u))(?<!\ba)\s+(?=(?:{DAY_ALT})\b\.?)",
     flags=regex.IGNORECASE,
 )
 
@@ -623,13 +660,15 @@ time_start_comp = regex.compile(
 )
 
 # filler words that may appear in the "day" portion of a segment but carry
-# no day information of their own (e.g. "Open 24 hours")
-filler_comp = regex.compile(r"\b(?:open|hours?|hrs?)\b", flags=regex.IGNORECASE)
+# no day information of their own (e.g. "Open 24 hours", or the "at" in
+# "Sundays at 7:45 am")
+filler_comp = regex.compile(r"\b(?:open|hours?|hrs?|at)\b", flags=regex.IGNORECASE)
 
 time_token_comp = regex.compile(
     r"^(\d{1,2})([:.h]?(\d{2}))?\s*([ap]\.?m?\.?)?$", flags=regex.IGNORECASE
 )
 
 time_range_split_comp = regex.compile(
-    r"\s*(?:-|to|through|\u2013|\u2014)\s*", flags=regex.IGNORECASE
+    r"\s*(?:-{1,2}|to|through|thru|\ba\b|\u2013|\u2014|\u2015)\s*",
+    flags=regex.IGNORECASE,
 )

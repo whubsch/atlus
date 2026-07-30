@@ -1,8 +1,15 @@
-"""Functions and tools to process raw opening hours strings."""
+"""Functions and tools to process raw opening hours and point-in-time strings.
+
+This module handles two related but distinct OSM conventions:
+
+- Ranged tags like `opening_hours`, parsed with `get_hours`.
+- Point-in-time tags like `collection_times`/`service_times`, parsed with
+  `get_times`.
+"""
 
 import regex
 
-from .objects import DayRange, OpeningHours, RuleSet, TimeSpan
+from .objects import DayRange, OpeningHours, PointRuleSet, PointTimes, RuleSet, TimeSpan
 from .resources import (
     closed_comp,
     comma_day_comp,
@@ -67,7 +74,9 @@ def _parse_days(day_part: str) -> list[DayRange]:
         return [DayRange(start="Sa", end="Su")]
 
     ranges: list[DayRange] = []
-    for token in regex.split(r"\s*,\s*", day_part):
+    # a slash between day names is used as a list separator (e.g. "We/Sa"
+    # meaning "We, Sa"), not a range -- treat it the same as a comma
+    for token in regex.split(r"\s*[,/]\s*", day_part):
         token = token.strip(" .:")
         if not token:
             continue
@@ -78,6 +87,11 @@ def _parse_days(day_part: str) -> list[DayRange]:
             end_code = day_expand.get(parts[1].upper())
             if start_code is None or end_code is None:
                 raise ValueError(f"Unrecognized day range: {token!r}")
+            if start_code == end_code:
+                # an explicit range that starts and ends on the same day
+                # (e.g. "Domingo a domingo"/"Sunday to Sunday") is an
+                # idiom for the full week, wrapping all the way around
+                return []
             ranges.append(DayRange(start=start_code, end=end_code))
         elif len(parts) == 1:
             code = day_expand.get(parts[0].upper())
@@ -255,6 +269,40 @@ def _parse_times(time_part: str) -> list[TimeSpan]:
     """
     tokens = [t for t in regex.split(r"\s*,\s*", time_part.strip(" ,")) if t]
     return _merge_time_spans([_parse_time_span(token) for token in tokens])
+
+
+def _parse_point_time(token: str) -> str:
+    """Parse a single point-in-time token into a 24-hour `HH:MM` string.
+
+    Unlike a time range, there's no second value to resolve an ambiguous
+    bare-digit time against, so such values (e.g. "3" with no colon or
+    am/pm marker) are taken at face value as an already-24-hour hour.
+
+    Args:
+        token (str): A single time value, e.g. "3pm", "15:00", "noon".
+
+    Returns:
+        str: The resolved "HH:MM" string.
+
+    Raises:
+        ValueError: If the token cannot be parsed as a time.
+    """
+    hour, minute, _ = _parse_single_time(token)
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _parse_point_times(time_part: str) -> list[str]:
+    """Parse the "time" portion of a point-in-time rule segment into a
+    sorted, de-duplicated list of "HH:MM" values.
+
+    Args:
+        time_part (str): The substring believed to contain time information.
+
+    Returns:
+        list[str]: The parsed, sorted point-in-time values.
+    """
+    tokens = [t for t in regex.split(r"\s*,\s*", time_part.strip(" ,")) if t]
+    return sorted({_parse_point_time(token) for token in tokens})
 
 
 def _split_comma_days(text: str) -> list[str]:
@@ -446,6 +494,38 @@ def _parse_segment(segment: str) -> RuleSet:
     return RuleSet(days=days, times=times)
 
 
+def _merge_duplicate_day_rules(rules: list[RuleSet]) -> list[RuleSet]:
+    """Merge consecutive rules that apply to the exact same day(s) and are
+    both timed (e.g. two separately-written windows for the same days with
+    no separator between them, like "Mo-Su 09:00-13:00 Mo-Su 16:30-20:30"),
+    combining their time spans instead of letting the later one silently
+    override the earlier one.
+
+    Args:
+        rules (list[RuleSet]): The individually-parsed rules, in input order.
+
+    Returns:
+        list[RuleSet]: The rules, with same-day timed duplicates merged.
+    """
+    merged: list[RuleSet] = []
+    for rule in rules:
+        prev = merged[-1] if merged else None
+        if (
+            prev is not None
+            and not rule.closed
+            and not rule.is_24h
+            and not prev.closed
+            and not prev.is_24h
+            and rule.days == prev.days
+        ):
+            merged[-1] = RuleSet(
+                days=prev.days, times=_merge_time_spans(prev.times + rule.times)
+            )
+        else:
+            merged.append(rule)
+    return merged
+
+
 def _rule_signature(rule: RuleSet) -> tuple:
     """Build a hashable signature representing a rule's status/times.
 
@@ -559,6 +639,112 @@ def _coalesce_rules(rules: list[RuleSet]) -> list[RuleSet]:
     return merged
 
 
+def _parse_point_segment(segment: str) -> PointRuleSet:
+    """Parse a single point-in-time rule segment into a PointRuleSet.
+
+    Args:
+        segment (str): A single rule segment (days plus point time(s)).
+
+    Returns:
+        PointRuleSet: The parsed rule.
+    """
+    day_part, time_part = _split_day_time(segment)
+    days = _parse_days(day_part)
+    times = _parse_point_times(time_part)
+    return PointRuleSet(days=days, times=times)
+
+
+def _merge_duplicate_point_day_rules(rules: list[PointRuleSet]) -> list[PointRuleSet]:
+    """Merge consecutive rules that apply to the exact same day(s),
+    combining their point times instead of letting the later one silently
+    override the earlier one.
+
+    Args:
+        rules (list[PointRuleSet]): The individually-parsed rules, in input
+            order.
+
+    Returns:
+        list[PointRuleSet]: The rules, with same-day duplicates merged.
+    """
+    merged: list[PointRuleSet] = []
+    for rule in rules:
+        prev = merged[-1] if merged else None
+        if prev is not None and rule.days == prev.days:
+            merged[-1] = PointRuleSet(
+                days=prev.days, times=sorted(set(prev.times) | set(rule.times))
+            )
+        else:
+            merged.append(rule)
+    return merged
+
+
+def _coalesce_point_rules(rules: list[PointRuleSet]) -> list[PointRuleSet]:
+    """Merge rules that share identical point times, and sort by week order.
+
+    Args:
+        rules (list[PointRuleSet]): The individually-parsed rules, in input
+            order. Later rules win if the same day appears more than once.
+
+    Returns:
+        list[PointRuleSet]: The merged rules, sorted by first day of the week.
+    """
+    day_to_rule: dict[str, PointRuleSet] = {}
+    for rule in rules:
+        for day in _expand_days(rule.days):
+            day_to_rule[day] = rule
+
+    sig_to_days: dict[tuple, set[str]] = {}
+    sig_to_rule: dict[tuple, PointRuleSet] = {}
+    for day, rule in day_to_rule.items():
+        sig = tuple(rule.times)
+        sig_to_days.setdefault(sig, set()).add(day)
+        sig_to_rule[sig] = rule
+
+    merged = [
+        PointRuleSet(days=_collapse_days_to_ranges(days), times=sig_to_rule[sig].times)
+        for sig, days in sig_to_days.items()
+    ]
+    merged.sort(key=lambda rule: day_index[rule.days[0].start.value])
+    return merged
+
+
+def get_times(value: str) -> str:
+    """Process point-in-time strings (e.g. `collection_times`,
+    `service_times`) into the OSM format.
+
+    ```python
+    >>> get_times("Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00")
+    "Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00"
+    >>> get_times("Monday to Friday 3pm and 6pm")
+    "Mo-Fr 15:00,18:00"
+    ```
+
+    Args:
+        value (str): The point-in-time string to process.
+
+    Returns:
+        str: The formatted point-in-time string.
+
+    Raises:
+        ValueError: If the string cannot be parsed.
+    """
+    normalized = _normalize(value)
+    if not normalized:
+        raise ValueError("Empty collection/service times string.")
+
+    top_segments = [s for s in rule_split_comp.split(normalized) if s.strip()]
+    top_segments = _merge_day_time_lines(top_segments)
+    segments = [sub for top in top_segments for sub in _split_space_days(top)]
+    segments = [sub for seg in segments for sub in _split_comma_days(seg)]
+    rules = [_parse_point_segment(segment) for segment in segments]
+    rules = _merge_duplicate_point_day_rules(rules)
+
+    if rules and all(rule.days for rule in rules):
+        rules = _coalesce_point_rules(rules)
+
+    return PointTimes(rules=rules).to_osm()
+
+
 def get_hours(value: str) -> str:
     """Process opening hours strings into the OSM `opening_hours` format.
 
@@ -592,9 +778,10 @@ def get_hours(value: str) -> str:
 
     top_segments = [s for s in rule_split_comp.split(normalized) if s.strip()]
     top_segments = _merge_day_time_lines(top_segments)
-    segments = [sub for top in top_segments for sub in _split_comma_days(top)]
-    segments = [sub for seg in segments for sub in _split_space_days(seg)]
+    segments = [sub for top in top_segments for sub in _split_space_days(top)]
+    segments = [sub for seg in segments for sub in _split_comma_days(seg)]
     rules = [_parse_segment(segment) for segment in segments]
+    rules = _merge_duplicate_day_rules(rules)
 
     # only coalesce/reorder when every rule specifies explicit days -- if any
     # rule applies to the whole week (e.g. "daily"), leave the input order
