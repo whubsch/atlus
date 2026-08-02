@@ -427,10 +427,89 @@ def test_get_hours_overnight_span() -> None:
     assert get_hours("Fri-Sat 22:00-02:00") == "Fr-Sa 22:00-02:00"
 
 
+# ---------------------------------------------------------------------------
+# Solar time keyword tests (dawn/dusk/sunrise/sunset)
+# ---------------------------------------------------------------------------
+
+
+def test_time_span_solar_keywords() -> None:
+    """Test TimeSpan accepts solar keywords in place of clock times."""
+    span = TimeSpan(start="sunrise", end="sunset")
+    assert span.to_osm() == "sunrise-sunset"
+
+
+def test_get_hours_sunrise_sunset() -> None:
+    """Test a day range with a sunrise-sunset span."""
+    assert get_hours("Mo-Fr sunrise-sunset") == "Mo-Fr sunrise-sunset"
+
+
+def test_get_hours_dawn_dusk() -> None:
+    """Test dawn/dusk as an alternate pair of solar keywords."""
+    assert get_hours("Mo-Fr dawn-dusk") == "Mo-Fr dawn-dusk"
+
+
+def test_get_hours_solar_no_days() -> None:
+    """Test a bare solar time span with no day prefix."""
+    assert get_hours("sunrise-sunset") == "sunrise-sunset"
+
+
+def test_get_hours_solar_mixed_with_clock_time() -> None:
+    """Test a solar keyword paired with an explicit clock time."""
+    assert get_hours("Mo-Fr sunrise-17:00") == "Mo-Fr sunrise-17:00"
+    assert get_hours("Mo-Fr 08:00-sunset") == "Mo-Fr 08:00-sunset"
+
+
+def test_get_hours_solar_case_insensitive() -> None:
+    """Test that solar keywords are normalized to lowercase."""
+    assert get_hours("Mo-Fr Sunrise-Sunset") == "Mo-Fr sunrise-sunset"
+
+
+def test_get_times_solar_keywords() -> None:
+    """Test that get_times also accepts solar keywords as point times."""
+    assert get_times("Mo-Fr sunrise,sunset") == "Mo-Fr sunrise,sunset"
+
+
+def test_point_rule_set_solar_keyword() -> None:
+    """Test PointRuleSet accepts a solar keyword as a point time."""
+    assert PointRuleSet(times=["sunrise"]).to_osm() == "sunrise"
+
+
 def test_get_hours_empty_string_raises() -> None:
     """Test that an empty string raises ValueError."""
     with pytest.raises(ValueError, match="Empty opening hours"):
         get_hours("")
+
+
+# ---------------------------------------------------------------------------
+# Unsupported calendar/date-based rule rejection tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_hours_month_name_raises() -> None:
+    """Test that a month name/specific date raises ValueError."""
+    with pytest.raises(ValueError, match="Calendar/date-based rules"):
+        get_hours("Mo-Su 10:00-17:00; Jan 1 off; Dec 25 off; Thanksgiving off")
+
+
+def test_get_hours_nth_weekday_notation_raises() -> None:
+    """Test that OSM's 'nth weekday of month' notation raises ValueError."""
+    with pytest.raises(ValueError, match="Calendar/date-based rules"):
+        get_hours(
+            "We-Su 11:00-17:00; Jan 01 off, easter, Jul 04, "
+            "Nov Th[4]-Fr[4], Dec 24-25 off"
+        )
+
+
+def test_get_hours_holiday_name_raises() -> None:
+    """Test that a bare named holiday raises ValueError."""
+    with pytest.raises(ValueError, match="Calendar/date-based rules"):
+        get_hours("Mo-Fr 09:00-17:00; Easter off")
+
+
+def test_get_times_month_name_raises() -> None:
+    """Test that get_times also rejects calendar/date-based references."""
+    with pytest.raises(ValueError, match="Calendar/date-based rules"):
+        get_times("Dec 25 15:00")
 
 
 def test_get_hours_invalid_day_raises() -> None:
@@ -442,6 +521,48 @@ def test_get_hours_invalid_day_raises() -> None:
 def test_get_hours_single_day_abbreviation() -> None:
     """Test single two-letter day abbreviations pass through unchanged."""
     assert get_hours("Su 10:00-16:00") == "Su 10:00-16:00"
+
+
+# ---------------------------------------------------------------------------
+# PH (public holiday) tests
+# ---------------------------------------------------------------------------
+
+
+def test_day_range_ph_standalone() -> None:
+    """Test DayRange.to_osm renders a standalone PH day."""
+    assert DayRange(start=Day.PH).to_osm() == "PH"
+
+
+def test_day_range_ph_in_range_raises() -> None:
+    """Test that PH can never be part of an actual day range."""
+    with pytest.raises(ValidationError):
+        DayRange(start=Day.PH, end=Day.MO)
+    with pytest.raises(ValidationError):
+        DayRange(start=Day.MO, end=Day.PH)
+
+
+def test_get_hours_ph_off() -> None:
+    """Test a trailing PH clause with a closed status."""
+    assert get_hours("Mo-Fr 09:00-17:00; PH off") == "Mo-Fr 09:00-17:00; PH off"
+
+
+def test_get_hours_ph_with_times() -> None:
+    """Test a trailing PH clause with its own timed rule."""
+    result = get_hours("Mo-Fr 09:00-17:00; PH 10:00-14:00")
+    assert result == "Mo-Fr 09:00-17:00; PH 10:00-14:00"
+
+
+def test_get_hours_ph_sorts_last_regardless_of_input_order() -> None:
+    """Test that PH always sorts after every other day, even if it's
+    written first in the input.
+    """
+    assert get_hours("PH off; Mo-Fr 09:00-17:00") == "Mo-Fr 09:00-17:00; PH off"
+
+
+def test_get_hours_ph_in_day_range_raises() -> None:
+    """Test that using PH as part of a day range raises an error."""
+    with pytest.raises(ValidationError):
+        get_hours("PH-Mo 09:00-17:00")
 
 
 # ---------------------------------------------------------------------------
@@ -552,9 +673,42 @@ def test_get_times_empty_string_raises() -> None:
         get_times("")
 
 
+def test_get_times_ignores_closed_day() -> None:
+    """Test that a 'closed' rule is dropped rather than erroring."""
+    result = get_times("Monday-Friday: 4:15pm Saturday: 1:00pm Sunday: Closed")
+    assert result == "Mo-Fr 16:15; Sa 13:00"
+
+
+def test_get_times_ignores_leading_closed_day() -> None:
+    """Test that a 'closed' rule is dropped regardless of its position."""
+    assert get_times("Su closed; Mo-Fr 15:00") == "Mo-Fr 15:00"
+
+
+def test_get_times_all_closed_raises() -> None:
+    """Test that a string with no actual times left raises ValueError."""
+    with pytest.raises(ValueError):
+        get_times("Mo-Su closed")
+
+
+def test_get_times_backwards_window() -> None:
+    """Test that backward time windows raise ValueError."""
+    with pytest.raises(ValueError, match="isn't a plausible overnight closing"):
+        get_hours("Su 16:00-14:00")
+
+
+def test_get_times_backwards_window_late_night() -> None:
+    """Test that late-night backward windows does not raise ValueError."""
+    assert get_hours("Monday thru Friday 6pm-2am") == "Mo-Fr 18:00-02:00"
+
+
 def test_get_hours_mixed_case_input() -> None:
     """Test that mixed-case day/time text is handled."""
     assert get_hours("mON-fRI 8AM-5PM") == "Mo-Fr 08:00-17:00"
+
+
+def test_get_hours_fi() -> None:
+    """Test that Fi is handled like Fr."""
+    assert get_hours("Mo-Fi 8AM-5PM") == get_hours("Mo-Fr 8AM-5PM")
 
 
 def test_get_hours_mixed_days() -> None:
@@ -830,6 +984,31 @@ REAL_WORLD_HOURS_CASES = [
     pytest.param(
         "Domingo a domingo 6:00 am -6:00 pm", "06:00-18:00", id="domingo_a_domingo"
     ),
+    pytest.param("Tuesday: 10 a.m. - 6 P.M.", "Tu 10:00-18:00", id="a.m._p.m."),
+    pytest.param(
+        "Monday to Friday – 8:30AM to 5:00PM, Saturday & Sunday – Closed",
+        "Mo-Fr 08:30-17:00; Sa-Su off",
+        id="a.m._p.m.",
+    ),
+    pytest.param(
+        "Mo-Wed 08:00-18:00 Thur 09-17",
+        "Mo-We 08:00-18:00; Th 09:00-17:00",
+        id="mixed_names_no_sep",
+    ),
+    pytest.param(
+        "Monday through Thursday 8:30 AM - 5 PM, Friday 8:30 AM - 1:30 PM, Closed Saturday and Sunday",
+        "Mo-Th 08:30-17:00; Fr 08:30-13:30; Sa-Su off",
+        id="closed_before_days",
+        marks=pytest.mark.xfail(
+            reason="Reversed 'Closed X and Y' phrasing after a comma-joined"
+            " list of normal day+time rules isn't reliably split from the"
+            " preceding rule; fixing this would require reworking the"
+            " shared comma/space day-splitting regexes used by every case.",
+            strict=True,
+        ),
+    ),
+    pytest.param("10:30 - 1:00; PH off", "10:30-01:00; PH off", id="ph_off"),
+    pytest.param("Friday 10:30 - dusk", "Fr 10:30-dusk", id="dusk"),
 ]
 
 
@@ -852,6 +1031,11 @@ REAL_WORLD_TIMES_CASES = [
         "Sat. 4:30 pm; Sundays at 7:45 am; 9:30 am; 11 am; 12:30 pm; 5:30 pm",
         "Sa 16:30; Su 07:45,09:30,11:00,12:30,17:30",
         id="days",
+    ),
+    pytest.param(
+        "Monday-Friday: 4:15pm Saturday: 1:00pm Sunday: Closed",
+        "Mo-Fr 16:15; Sa 13:00",
+        id="closed",
     ),
 ]
 

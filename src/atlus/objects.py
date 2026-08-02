@@ -50,7 +50,12 @@ class Address(BaseModel):
 
 
 class Day(str, Enum):
-    """Two-letter OSM day abbreviations, in canonical week order."""
+    """Two-letter OSM day abbreviations, in canonical week order, plus the
+    special `PH` (public holiday) indicator.
+
+    `PH` isn't a real weekday -- it's never part of a day range, always
+    stands alone, and always sorts after every other day.
+    """
 
     MO = "Mo"
     TU = "Tu"
@@ -59,6 +64,7 @@ class Day(str, Enum):
     FR = "Fr"
     SA = "Sa"
     SU = "Su"
+    PH = "PH"
 
     @property
     def index(self) -> int:
@@ -73,6 +79,17 @@ class DayRange(BaseModel):
     end: Day | None = Field(
         default=None, description="The last day in the range, if a range."
     )
+
+    @model_validator(mode="after")
+    def _check_ph_standalone(self) -> "DayRange":
+        """Ensure `PH` (public holiday) is never part of an actual range."""
+        if (
+            self.end is not None
+            and self.start != self.end
+            and Day.PH in (self.start, self.end)
+        ):
+            raise ValueError("'PH' cannot be part of a day range.")
+        return self
 
     def to_osm(self) -> str:
         """Render the day range in OSM `opening_hours` syntax.
@@ -90,18 +107,20 @@ class DayRange(BaseModel):
 
 
 class TimeSpan(BaseModel):
-    """A single opening time interval, e.g. `08:00-12:00`."""
+    """A single opening time interval, e.g. `08:00-12:00` or `sunrise-sunset`."""
 
     start: str = Field(
-        pattern=r"^([01]\d|2[0-4]):[0-5]\d$",
-        description="The start time, in 24-hour `HH:MM` format.",
-        examples=["08:00"],
+        pattern=r"^(?:([01]\d|2[0-4]):[0-5]\d|dawn|dusk|sunrise|sunset)$",
+        description="The start time, in 24-hour `HH:MM` format, or one of"
+        " the solar keywords `dawn`, `dusk`, `sunrise`, `sunset`.",
+        examples=["08:00", "sunrise"],
     )
     end: str = Field(
-        pattern=r"^([01]\d|2[0-4]):[0-5]\d$",
-        description="The end time, in 24-hour `HH:MM` format. May be earlier"
+        pattern=r"^(?:([01]\d|2[0-4]):[0-5]\d|dawn|dusk|sunrise|sunset)$",
+        description="The end time, in 24-hour `HH:MM` format, or one of the"
+        " solar keywords `dawn`, `dusk`, `sunrise`, `sunset`. May be earlier"
         " than `start` to represent a span that crosses midnight.",
-        examples=["17:30"],
+        examples=["17:30", "sunset"],
     )
 
     def to_osm(self) -> str:
@@ -187,8 +206,12 @@ class PointRuleSet(BaseModel):
     @field_validator("times")
     @classmethod
     def _check_time_format(cls, value: list[str]) -> list[str]:
-        """Ensure every time value is a valid 24-hour `HH:MM` string."""
-        pattern = regex.compile(r"^([01]\d|2[0-4]):[0-5]\d$")
+        """Ensure every time value is a valid 24-hour `HH:MM` string, or one
+        of the solar keywords `dawn`, `dusk`, `sunrise`, `sunset`.
+        """
+        pattern = regex.compile(
+            r"^(?:([01]\d|2[0-4]):[0-5]\d|dawn|dusk|sunrise|sunset)$"
+        )
         for time in value:
             if not pattern.match(time):
                 raise ValueError(f"Invalid time format: {time!r}")

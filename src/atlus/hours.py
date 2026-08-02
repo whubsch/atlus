@@ -9,7 +9,19 @@ This module handles two related but distinct OSM conventions:
 
 import regex
 
-from .objects import DayRange, OpeningHours, PointRuleSet, PointTimes, RuleSet, TimeSpan
+from .objects import (
+    Day,
+    DayRange,
+    OpeningHours,
+    PointRuleSet,
+    PointTimes,
+    RuleSet,
+    TimeSpan,
+)
+
+EARLY_MORNING_CUTOFF_HOUR = 6
+"""The latest hour (24-hour, exclusive) still considered a plausible
+overnight closing time, e.g. "2am" or "5am" but not "2pm"."""
 from .resources import (
     closed_comp,
     comma_day_comp,
@@ -22,8 +34,12 @@ from .resources import (
     day_order,
     day_range_comp,
     filler_comp,
+    holiday_name_comp,
     ignored_phrase_comp,
+    month_comp,
+    nth_weekday_comp,
     rule_split_comp,
+    solar_time_comp,
     space_day_comp,
     time_range_split_comp,
     time_start_comp,
@@ -52,6 +68,37 @@ def _normalize(value: str) -> str:
     return value.strip(" .,")
 
 
+def _reject_unsupported_calendar_refs(value: str) -> None:
+    """Raise if the string references calendar/date-based rules that this
+    package doesn't attempt to parse, rather than silently mangling them.
+
+    This includes month names or specific dates (e.g. "Jan 1", "Dec 25"),
+    named holidays (e.g. "Easter", "Thanksgiving"), and OSM's "nth weekday
+    of month" notation (e.g. "Th[4]" for the fourth Thursday). These all
+    require actual calendar logic, which is out of scope here -- input
+    containing them should be handled manually instead of risking a
+    silently incorrect result.
+
+    Args:
+        value (str): The string to check (normalized or raw).
+
+    Raises:
+        ValueError: If a calendar/date-based reference is detected.
+    """
+    for comp, kind in (
+        (nth_weekday_comp, "an 'nth weekday of month' reference (e.g. 'Th[4]')"),
+        (month_comp, "a month name or specific date (e.g. 'Jan 1')"),
+        (holiday_name_comp, "a named holiday (e.g. 'Easter', 'Thanksgiving')"),
+    ):
+        match = comp.search(value)
+        if match:
+            raise ValueError(
+                "Calendar/date-based rules aren't supported -- found "
+                f"{kind}: {match.group()!r}. Only weekly day-of-week rules "
+                "(with an optional trailing 'PH' rule) can be parsed."
+            )
+
+
 def _parse_days(day_part: str) -> list[DayRange]:
     """Parse the "day" portion of a rule segment into a list of DayRange.
 
@@ -62,7 +109,7 @@ def _parse_days(day_part: str) -> list[DayRange]:
         list[DayRange]: The parsed day ranges. Empty means "every day".
     """
     day_part = filler_comp.sub(" ", day_part)
-    day_part = regex.sub(r"\s+", " ", day_part).strip(" ,")
+    day_part = regex.sub(r"\s+", " ", day_part).strip(" ,-\u2013\u2014\u2015")
     if not day_part:
         return []
 
@@ -145,6 +192,11 @@ def _parse_single_time(token: str) -> tuple[int, int, bool]:
         # explicit HH:MM with no am/pm is treated as already 24-hour
         return hour, minute, True
 
+    if hour > 12:
+        # a bare hour above 12 (e.g. "17") can only be a 24-hour value --
+        # there's no 12-hour reading of it, so it's already unambiguous
+        return hour, minute, True
+
     # bare digit, e.g. "9" or "5" -- ambiguous, needs resolution later
     return hour, minute, False
 
@@ -200,8 +252,23 @@ def _meridiem_letter(token: str) -> str | None:
     return match.group(4).replace(".", "")[0]
 
 
+def _match_solar_time(token: str) -> str | None:
+    """Check whether a token is one of OSM's solar-relative time keywords.
+
+    Args:
+        token (str): A single time value, e.g. "sunrise" or "08:00".
+
+    Returns:
+        str | None: The lowercased keyword ("dawn", "dusk", "sunrise", or
+        "sunset") if the token is one of them, otherwise None.
+    """
+    token = token.strip().lower()
+    return token if solar_time_comp.match(token) else None
+
+
 def _parse_time_span(token: str) -> TimeSpan:
-    """Parse a single time range token, e.g. "8am-5pm" or "08:00-12:00".
+    """Parse a single time range token, e.g. "8am-5pm", "08:00-12:00", or
+    "sunrise-sunset".
 
     Args:
         token (str): The time range token.
@@ -215,6 +282,22 @@ def _parse_time_span(token: str) -> TimeSpan:
     parts = [p for p in time_range_split_comp.split(token.strip(), maxsplit=1) if p]
     if len(parts) != 2:
         raise ValueError(f"Unrecognized time range: {token!r}")
+
+    start_solar = _match_solar_time(parts[0])
+    end_solar = _match_solar_time(parts[1])
+
+    if start_solar or end_solar:
+        # solar keywords are relative and unambiguous on their own -- there's
+        # no pair to resolve against, and no meaningful way to compare them
+        # against a clock time to detect a "backwards" span, so each side is
+        # handled independently and the overnight-span check is skipped
+        if not start_solar:
+            hour, minute, _ = _parse_single_time(parts[0])
+            start_solar = f"{hour:02d}:{minute:02d}"
+        if not end_solar:
+            hour, minute, _ = _parse_single_time(parts[1])
+            end_solar = f"{hour:02d}:{minute:02d}"
+        return TimeSpan(start=start_solar, end=end_solar)
 
     start = _parse_single_time(parts[0])
     end = _parse_single_time(parts[1])
@@ -231,6 +314,17 @@ def _parse_time_span(token: str) -> TimeSpan:
         and 0 < start[0] < 12
     ):
         start_str = f"{start[0] + 12:02d}:{start[1]:02d}"
+
+    # an end time earlier than the start time normally means the span
+    # crosses midnight (e.g. "22:00-02:00"), which is valid OSM syntax --
+    # but only when the end time actually falls in the late night/early
+    # morning hours. An end time later in the day (e.g. "16:00-14:00")
+    # is almost certainly a mistake rather than a ~22 hour overnight span.
+    if end_str < start_str and int(end_str[:2]) >= EARLY_MORNING_CUTOFF_HOUR:
+        raise ValueError(
+            f"Invalid time range: {token.strip()!r} ends before it starts, "
+            "and isn't a plausible overnight closing time"
+        )
 
     return TimeSpan(start=start_str, end=end_str)
 
@@ -272,21 +366,25 @@ def _parse_times(time_part: str) -> list[TimeSpan]:
 
 
 def _parse_point_time(token: str) -> str:
-    """Parse a single point-in-time token into a 24-hour `HH:MM` string.
+    """Parse a single point-in-time token into a 24-hour `HH:MM` string, or
+    a solar keyword ("dawn", "dusk", "sunrise", "sunset").
 
     Unlike a time range, there's no second value to resolve an ambiguous
     bare-digit time against, so such values (e.g. "3" with no colon or
     am/pm marker) are taken at face value as an already-24-hour hour.
 
     Args:
-        token (str): A single time value, e.g. "3pm", "15:00", "noon".
+        token (str): A single time value, e.g. "3pm", "15:00", "sunrise".
 
     Returns:
-        str: The resolved "HH:MM" string.
+        str: The resolved "HH:MM" string, or the solar keyword as-is.
 
     Raises:
         ValueError: If the token cannot be parsed as a time.
     """
+    solar = _match_solar_time(token)
+    if solar:
+        return solar
     hour, minute, _ = _parse_single_time(token)
     return f"{hour:02d}:{minute:02d}"
 
@@ -553,6 +651,11 @@ def _expand_days(day_ranges: list[DayRange]) -> list[str]:
 
     days: list[str] = []
     for day_range in day_ranges:
+        if day_range.start == Day.PH:
+            # PH (public holiday) is never part of the weekly cycle -- it
+            # always stands alone
+            days.append("PH")
+            continue
         start_idx = day_index[day_range.start.value]
         end_idx = day_index[day_range.end.value] if day_range.end else start_idx
         if end_idx >= start_idx:
@@ -572,31 +675,37 @@ def _collapse_days_to_ranges(days: set[str]) -> list[DayRange]:
     Returns:
         list[DayRange]: The days grouped into contiguous ranges, in week order.
     """
+    # PH (public holiday) is never grouped into a weekly range -- collapse
+    # the real weekdays first, then always append PH last, on its own
+    has_ph = "PH" in days
     ordered = [day for day in day_order if day in days]
-    if not ordered:
-        return []
 
     ranges: list[DayRange] = []
-    run_start = run_prev = ordered[0]
-    run_prev_idx = day_index[run_prev]
-    for day in ordered[1:]:
-        day_idx = day_index[day]
-        if day_idx == run_prev_idx + 1:
-            run_prev = day
+    if ordered:
+        run_start = run_prev = ordered[0]
+        run_prev_idx = day_index[run_prev]
+        for day in ordered[1:]:
+            day_idx = day_index[day]
+            if day_idx == run_prev_idx + 1:
+                run_prev = day
+                run_prev_idx = day_idx
+                continue
+            ranges.append(
+                DayRange(start=run_start)
+                if run_start == run_prev
+                else DayRange(start=run_start, end=run_prev)
+            )
+            run_start = run_prev = day
             run_prev_idx = day_idx
-            continue
         ranges.append(
             DayRange(start=run_start)
             if run_start == run_prev
             else DayRange(start=run_start, end=run_prev)
         )
-        run_start = run_prev = day
-        run_prev_idx = day_idx
-    ranges.append(
-        DayRange(start=run_start)
-        if run_start == run_prev
-        else DayRange(start=run_start, end=run_prev)
-    )
+
+    if has_ph:
+        ranges.append(DayRange(start=Day.PH))
+
     return ranges
 
 
@@ -635,20 +744,31 @@ def _coalesce_rules(rules: list[RuleSet]) -> list[RuleSet]:
         )
         for sig, days in sig_to_days.items()
     ]
-    merged.sort(key=lambda rule: day_index[rule.days[0].start.value])
+    merged.sort(
+        key=lambda rule: day_index.get(rule.days[0].start.value, len(day_order))
+    )
     return merged
 
 
-def _parse_point_segment(segment: str) -> PointRuleSet:
+def _parse_point_segment(segment: str) -> PointRuleSet | None:
     """Parse a single point-in-time rule segment into a PointRuleSet.
+
+    Point-in-time tags like `collection_times`/`service_times` have no
+    "closed" concept of their own -- a day with no scheduled times simply
+    has no entry -- so a "closed"/"off" segment (e.g. "Sunday: Closed")
+    carries no meaningful point time and is dropped entirely rather than
+    raising or fabricating a value.
 
     Args:
         segment (str): A single rule segment (days plus point time(s)).
 
     Returns:
-        PointRuleSet: The parsed rule.
+        PointRuleSet | None: The parsed rule, or None if the segment is a
+        "closed"/"off" status with no actual times.
     """
     day_part, time_part = _split_day_time(segment)
+    if closed_comp.search(time_part):
+        return None
     days = _parse_days(day_part)
     times = _parse_point_times(time_part)
     return PointRuleSet(days=days, times=times)
@@ -704,7 +824,9 @@ def _coalesce_point_rules(rules: list[PointRuleSet]) -> list[PointRuleSet]:
         PointRuleSet(days=_collapse_days_to_ranges(days), times=sig_to_rule[sig].times)
         for sig, days in sig_to_days.items()
     ]
-    merged.sort(key=lambda rule: day_index[rule.days[0].start.value])
+    merged.sort(
+        key=lambda rule: day_index.get(rule.days[0].start.value, len(day_order))
+    )
     return merged
 
 
@@ -717,7 +839,26 @@ def get_times(value: str) -> str:
     "Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00"
     >>> get_times("Monday to Friday 3pm and 6pm")
     "Mo-Fr 15:00,18:00"
+    >>> get_times("Mo-Fr sunrise,sunset")
+    "Mo-Fr sunrise,sunset"
+    >>> get_times("Monday-Friday: 4:15pm Saturday: 1:00pm Sunday: Closed")
+    "Mo-Fr 16:15; Sa 13:00"
     ```
+
+    Point-in-time tags have no "closed" concept of their own -- a day with
+    no scheduled times simply has no entry -- so a "closed"/"off" rule
+    (e.g. `"Sunday: Closed"`) is dropped entirely rather than raising or
+    fabricating a value.
+
+    The solar keywords `dawn`, `dusk`, `sunrise`, and `sunset` are accepted
+    in place of a clock time, and are rendered in lowercase exactly as OSM
+    expects.
+
+    Calendar/date-based rules -- month names or specific dates, named
+    holidays, and OSM's "nth weekday of month" notation (e.g. `"Th[4]"`)
+    -- aren't supported. Rather than risk silently mangling them, any input
+    containing one of these raises `ValueError` instead of returning a
+    partial or incorrect result.
 
     Args:
         value (str): The point-in-time string to process.
@@ -726,17 +867,23 @@ def get_times(value: str) -> str:
         str: The formatted point-in-time string.
 
     Raises:
-        ValueError: If the string cannot be parsed.
+        ValueError: If the string cannot be parsed, or if it references a
+            calendar/date-based rule that isn't supported.
     """
     normalized = _normalize(value)
     if not normalized:
         raise ValueError("Empty collection/service times string.")
+    _reject_unsupported_calendar_refs(normalized)
 
     top_segments = [s for s in rule_split_comp.split(normalized) if s.strip()]
     top_segments = _merge_day_time_lines(top_segments)
     segments = [sub for top in top_segments for sub in _split_space_days(top)]
     segments = [sub for seg in segments for sub in _split_comma_days(seg)]
-    rules = [_parse_point_segment(segment) for segment in segments]
+    rules = [
+        rule
+        for rule in (_parse_point_segment(segment) for segment in segments)
+        if rule is not None
+    ]
     rules = _merge_duplicate_point_day_rules(rules)
 
     if rules and all(rule.days for rule in rules):
@@ -755,7 +902,28 @@ def get_hours(value: str) -> str:
     "Mo-Fr 09:00-17:00; Sa 09:00-12:00"
     >>> get_hours("Closed")
     "off"
+    >>> get_hours("Mo-Fr 09:00-17:00; PH off")
+    "Mo-Fr 09:00-17:00; PH off"
+    >>> get_hours("Mo-Fr sunrise-sunset")
+    "Mo-Fr sunrise-sunset"
     ```
+
+    The solar keywords `dawn`, `dusk`, `sunrise`, and `sunset` are accepted
+    in place of a clock time (on either or both sides of a time span), and
+    are rendered in lowercase exactly as OSM expects.
+
+    `PH` (public holiday) is supported as a special, non-weekday indicator:
+    it's recognized only as the exact token `PH` (no other aliases or
+    forms), can never be part of an actual day range (e.g. `PH-Mo` is
+    rejected), and always sorts after every other day/rule in the output,
+    regardless of where it appeared in the input.
+
+    Calendar/date-based rules -- month names or specific dates (e.g.
+    `"Jan 1"`), named holidays (e.g. `"Easter"`, `"Thanksgiving"`), and
+    OSM's "nth weekday of month" notation (e.g. `"Th[4]"` for the fourth
+    Thursday) -- aren't supported. Rather than risk silently mangling them,
+    any input containing one of these raises `ValueError` instead of
+    returning a partial or incorrect result.
 
     Args:
         value (str): The opening hours string to process.
@@ -764,11 +932,13 @@ def get_hours(value: str) -> str:
         str: The formatted opening hours string.
 
     Raises:
-        ValueError: If the string cannot be parsed.
+        ValueError: If the string cannot be parsed, or if it references a
+            calendar/date-based rule that isn't supported.
     """
     normalized = _normalize(value)
     if not normalized:
         raise ValueError("Empty opening hours string.")
+    _reject_unsupported_calendar_refs(normalized)
 
     stripped = normalized.strip()
     if closed_comp.fullmatch(stripped):

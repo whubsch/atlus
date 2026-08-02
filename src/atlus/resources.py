@@ -548,6 +548,7 @@ day_expand = {
     "FRIDAY": "Fr",
     "FRI": "Fr",
     "FR": "Fr",
+    "FI": "Fr",  # surpisingly common in OSM, maybe typo in some software
     "F": "Fr",
     "FRIDAYS": "Fr",
     "SATURDAY": "Sa",
@@ -586,6 +587,9 @@ day_expand = {
     "FREITAG": "Fr",
     "SAMSTAG": "Sa",
     "SONNTAG": "Su",
+    # public holiday indicator -- a real "8th day" in OSM syntax, with no
+    # other accepted aliases or forms
+    "PH": "PH",
 }
 """Map day names/abbreviations to OSM two-letter day codes."""
 
@@ -619,6 +623,48 @@ day_24_comp = regex.compile(
     flags=regex.IGNORECASE,
 )
 
+# month names, in either abbreviated or full form -- used only to *detect*
+# (and reject) calendar/date-based rules that this package doesn't attempt
+# to parse, such as "Jan 1 off" or "Dec 25 off"
+MONTH_ALT = (
+    r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?"
+    r"|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+)
+month_comp = regex.compile(rf"\b(?:{MONTH_ALT})\b", flags=regex.IGNORECASE)
+
+# OSM's "nth weekday of month" notation, e.g. "Th[4]" (fourth Thursday) or
+# "Su[-1]" (last Sunday) -- also unsupported and rejected outright
+nth_weekday_comp = regex.compile(
+    rf"\b(?:{DAY_ALT})\s*\[\s*-?\d+\s*\]", flags=regex.IGNORECASE
+)
+
+# common named holidays that OSM opening_hours values sometimes reference
+# directly instead of (or in addition to) a calendar date -- also
+# unsupported and rejected outright
+HOLIDAY_ALT = "|".join(
+    [
+        "easter",
+        "good friday",
+        "thanksgiving",
+        "christmas(?: day|eve)?",
+        "boxing day",
+        "halloween",
+        "new\\s*year'?s?(?:\\s*day)?",
+        "victoria day",
+        "labou?r day",
+        "memorial day",
+        "independence day",
+        "veterans day",
+        "presidents'?\\s*day",
+        "columbus day",
+        "indigenous peoples'?\\s*day",
+        "mlk day",
+        "martin luther king,?\\s*jr\\.?\\s*day",
+        "juneteenth",
+    ]
+)
+holiday_name_comp = regex.compile(rf"\b(?:{HOLIDAY_ALT})\b", flags=regex.IGNORECASE)
+
 # split a string into multiple top-level rule segments on ";", newlines, a
 # middle dot ("·") or bullet ("•"), a slash surrounded by whitespace, or a
 # pipe, which are sometimes used as rule separators -- the whitespace
@@ -651,12 +697,19 @@ space_day_comp = regex.compile(
     flags=regex.IGNORECASE,
 )
 
-# first place a digit, clock keyword, or the words "closed"/"off"/"24" appear
-# -- everything before this point is assumed to be the "day" portion of a
-# rule segment
+# first place a digit, clock keyword, solar keyword (dawn/dusk/sunrise/
+# sunset), or the words "closed"/"off"/"24" appear -- everything before
+# this point is assumed to be the "day" portion of a rule segment
 time_start_comp = regex.compile(
-    r"\d|closed|off|noon|midnight|24\s*/\s*7|24\s*hours?|all\s*day",
+    r"\d|closed|off|noon|midnight|24\s*/\s*7|24\s*hours?|all\s*day"
+    r"|dawn|dusk|sunrise|sunset",
     flags=regex.IGNORECASE,
+)
+
+# OSM's solar-relative time keywords, used in place of a clock time (e.g.
+# "sunrise-sunset"); rendered in the output exactly as-is, in lowercase
+solar_time_comp = regex.compile(
+    r"^(?:dawn|dusk|sunrise|sunset)$", flags=regex.IGNORECASE
 )
 
 # filler words that may appear in the "day" portion of a segment but carry
@@ -669,6 +722,6 @@ time_token_comp = regex.compile(
 )
 
 time_range_split_comp = regex.compile(
-    r"\s*(?:-{1,2}|to|through|thru|\ba\b|\u2013|\u2014|\u2015)\s*",
+    r"\s*(?:-{1,2}|to|through|thru|\ba\b(?!\.?m\.?\b)|\u2013|\u2014|\u2015)\s*",
     flags=regex.IGNORECASE,
 )
