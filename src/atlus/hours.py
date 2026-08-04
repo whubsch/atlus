@@ -59,13 +59,24 @@ def _normalize(value: str) -> str:
         str: The normalized string.
     """
     value = value.replace("&", ",").replace("and", ",")
+    # Replace Spanish "y" (and) and "de" (of/from) with comma, using word
+    # boundaries to avoid matching letters within words
+    value = regex.sub(r"\by\b", ",", value, flags=regex.IGNORECASE)
+    value = regex.sub(r"\bde\b", "", value, flags=regex.IGNORECASE)
     # drop phrases that carry no day/time information of their own (e.g.
     # "Last Seating") before any other parsing happens
     value = ignored_phrase_comp.sub("", value)
     # collapse horizontal whitespace only -- newlines are meaningful rule
     # separators and are handled by rule_split_comp
     value = regex.sub(r"[ \t]+", " ", value)
-    return value.strip(" .,")
+    value = value.strip(" ,")
+    # strip trailing periods only if NOT part of a.m./p.m. abbreviation
+    # (i.e., not preceded by a single letter like "a." or "p.")
+    while value.endswith(".") and not regex.search(
+        r"[a-z]\.$", value, flags=regex.IGNORECASE
+    ):
+        value = value[:-1].rstrip(" .,")
+    return value
 
 
 def _reject_unsupported_calendar_refs(value: str) -> None:
@@ -93,9 +104,8 @@ def _reject_unsupported_calendar_refs(value: str) -> None:
         match = comp.search(value)
         if match:
             raise ValueError(
-                "Calendar/date-based rules aren't supported -- found "
-                f"{kind}: {match.group()!r}. Only weekly day-of-week rules "
-                "(with an optional trailing 'PH' rule) can be parsed."
+                "Calendar/date-based rules aren't supported"
+                f" -- found {kind}: {match.group()!r}."
             )
 
 
@@ -830,6 +840,78 @@ def _coalesce_point_rules(rules: list[PointRuleSet]) -> list[PointRuleSet]:
     return merged
 
 
+def _validate_opening_hours_output(output: str) -> None:
+    """Validate that the output is well-formed opening_hours syntax.
+
+    Each rule must have both days and times (or be entirely off/24h).
+    A rule like "Fr off; Sa-Su" (missing times on the last rule) is invalid.
+
+    Args:
+        output (str): The formatted opening_hours string.
+
+    Raises:
+        ValueError: If the output has malformed rules.
+    """
+    if not output or output == "off" or output == "24/7":
+        return
+
+    # Split into individual rules
+    rules = [r.strip() for r in output.split(";") if r.strip()]
+
+    for rule in rules:
+        # Each rule should have either:
+        # - days + times (e.g. "Mo-Fr 08:00-12:00")
+        # - days + "off" (e.g. "Sa-Su off")
+        # - days + "24/7" (e.g. "We 24/7")
+        # - just times (e.g. "08:00-12:00")
+        # - just "off" or "24/7"
+        # But NOT just days with nothing else (e.g. "Sa-Su")
+
+        # Check if it's a rule with days
+        parts = rule.split()
+        if len(parts) < 1:
+            raise ValueError(f"Malformed rule in output: {rule!r}")
+
+        # If first part looks like days (contains weekday abbreviations or ranges),
+        # there must be a second part with times/off/24h
+        if len(parts) >= 1 and _has_day_info(parts[0]):
+            if len(parts) < 2:
+                raise ValueError(
+                    f"Incomplete rule (days without times) in output: {rule!r}"
+                )
+
+
+def _validate_point_times_output(output: str) -> None:
+    """Validate that the output is well-formed point-in-time syntax.
+
+    Each rule must have both days and times.
+    A rule like "Mo-Fr 15:00; Sa" (missing times on the last rule) is invalid.
+
+    Args:
+        output (str): The formatted point-in-time string.
+
+    Raises:
+        ValueError: If the output has malformed rules.
+    """
+    if not output:
+        raise ValueError("Empty point-in-time output")
+
+    # Split into individual rules
+    rules = [r.strip() for r in output.split(";") if r.strip()]
+
+    for rule in rules:
+        parts = rule.split()
+        if len(parts) < 1:
+            raise ValueError(f"Malformed rule in output: {rule!r}")
+
+        # If first part looks like days, there must be times
+        if len(parts) >= 1 and _has_day_info(parts[0]):
+            if len(parts) < 2:
+                raise ValueError(
+                    f"Incomplete rule (days without times) in output: {rule!r}"
+                )
+
+
 def get_times(value: str) -> str:
     """Process point-in-time strings (e.g. `collection_times`,
     `service_times`) into the OSM format.
@@ -889,7 +971,9 @@ def get_times(value: str) -> str:
     if rules and all(rule.days for rule in rules):
         rules = _coalesce_point_rules(rules)
 
-    return PointTimes(rules=rules).to_osm()
+    output = PointTimes(rules=rules).to_osm()
+    _validate_point_times_output(output)
+    return output
 
 
 def get_hours(value: str) -> str:
@@ -959,4 +1043,6 @@ def get_hours(value: str) -> str:
     if rules and all(rule.days for rule in rules):
         rules = _coalesce_rules(rules)
 
-    return OpeningHours(rules=rules).to_osm()
+    output = OpeningHours(rules=rules).to_osm()
+    _validate_opening_hours_output(output)
+    return output

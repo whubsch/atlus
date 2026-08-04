@@ -563,14 +563,23 @@ day_expand = {
     "SUNS": "Su",
     # Spanish
     "LUNES": "Mo",
+    "LUN": "Mo",
     "MARTES": "Tu",
+    "MAR": "Tu",
     "MIERCOLES": "We",
     "MIÉRCOLES": "We",
+    "MIE": "We",
     "JUEVES": "Th",
+    "JUE": "Th",
     "VIERNES": "Fr",
+    "VIE": "Fr",
     "SABADO": "Sa",
     "SÁBADO": "Sa",
+    "SABADOS": "Sa",
+    "SÁBADOS": "Sa",
+    "SAB": "Sa",
     "DOMINGO": "Su",
+    "DOMINGOS": "Su",
     # French
     "LUNDI": "Mo",
     "MARDI": "Tu",
@@ -600,7 +609,11 @@ day_index = {day: i for i, day in enumerate(day_order)}
 """Map day codes to their position in the week, for fast O(1) lookups."""
 
 DAY_ALT = "|".join(sorted(day_expand, key=len, reverse=True))
-day_comp = regex.compile(rf"\b(?:{DAY_ALT})\b\.?", flags=regex.IGNORECASE)
+# Avoid matching single-letter days (M, W, F) when preceded by a period
+# (e.g., "a.m.", "p.m.") -- use negative lookbehind
+day_comp = regex.compile(
+    rf"(?<![a-zA-Z]\.)\b(?:{DAY_ALT})\b\.?", flags=regex.IGNORECASE
+)
 
 # looser day-name detector that also matches when a day name is glued
 # directly to a following digit with no separator (e.g. "Friday10:00 AM"),
@@ -616,7 +629,9 @@ day_range_comp = regex.compile(
 
 weekday_comp = regex.compile(r"\bweekdays?\b", flags=regex.IGNORECASE)
 weekend_comp = regex.compile(r"\bweekends?\b", flags=regex.IGNORECASE)
-daily_comp = regex.compile(r"\b(?:daily|every ?day)\b", flags=regex.IGNORECASE)
+daily_comp = regex.compile(
+    r"\b(?:daily|every ?day|todos los dias)\b", flags=regex.IGNORECASE
+)
 closed_comp = regex.compile(r"\b(?:closed|off)\b", flags=regex.IGNORECASE)
 day_24_comp = regex.compile(
     r"\b(?:24\s*/\s*7|24\s*hours?(?:\s+a\s+day)?|all\s*day|open\s*24)\b",
@@ -715,7 +730,9 @@ solar_time_comp = regex.compile(
 # filler words that may appear in the "day" portion of a segment but carry
 # no day information of their own (e.g. "Open 24 hours", or the "at" in
 # "Sundays at 7:45 am")
-filler_comp = regex.compile(r"\b(?:open|hours?|hrs?|at)\b", flags=regex.IGNORECASE)
+filler_comp = regex.compile(
+    r"\b(?:open|hours?|hrs?|at|available)\b", flags=regex.IGNORECASE
+)
 
 time_token_comp = regex.compile(
     r"^(\d{1,2})([:.h]?(\d{2}))?\s*([ap]\.?m?\.?)?$", flags=regex.IGNORECASE

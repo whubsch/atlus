@@ -1009,6 +1009,14 @@ REAL_WORLD_HOURS_CASES = [
     ),
     pytest.param("10:30 - 1:00; PH off", "10:30-01:00; PH off", id="ph_off"),
     pytest.param("Friday 10:30 - dusk", "Fr 10:30-dusk", id="dusk"),
+    pytest.param(
+        "todos los dias 10:30 a.m. - 6:30 p.m.", "10:30-18:30", id="todos_los_dias"
+    ),
+    pytest.param(
+        "Lunes, Martes, Jueves, Viernes 8:00 am a 12:00 pm y de 1:00 pm a 5:00 pm Miércoles y Sábado 8:00 am a 2:00 p.m.",
+        "Mo-Tu,Th-Fr 08:00-12:00,13:00-17:00; We,Sa 08:00-14:00",
+        id="de_check",
+    ),
 ]
 
 
@@ -1030,12 +1038,22 @@ REAL_WORLD_TIMES_CASES = [
     pytest.param(
         "Sat. 4:30 pm; Sundays at 7:45 am; 9:30 am; 11 am; 12:30 pm; 5:30 pm",
         "Sa 16:30; Su 07:45,09:30,11:00,12:30,17:30",
-        id="days",
+        id="days2",
     ),
     pytest.param(
         "Monday-Friday: 4:15pm Saturday: 1:00pm Sunday: Closed",
         "Mo-Fr 16:15; Sa 13:00",
         id="closed",
+    ),
+    pytest.param(
+        "Martes 6:30 pm, Jueves 6:30 pm, Sábado 6:30 pm, Domingo 9:00 am y 11:00 am.",
+        "Tu,Th,Sa 18:30; Su 09:00,11:00",
+        id="spanish_days",
+    ),
+    pytest.param(
+        "Martes, Jueves y Sábado 6:00 pm, Domingo 8:00 am",
+        "Tu,Th,Sa 18:00; Su 08:00",
+        id="spanish_days",
     ),
 ]
 
