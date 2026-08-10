@@ -23,7 +23,9 @@ This Python project translates raw address, phone number, and opening hours stri
 - Parse address parts correctly and reliably.
 - Get rid of address junk that is not needed for OpenStreetMap tagging.
 - Parse US and Canadian phone numbers into the standard format.
-- Convert freeform opening hours strings into the OSM `opening_hours` format.
+- Parse raw opening hours strings into the OSM `opening_hours` format, including the special `PH` (public holiday) indicator and the `dawn`/`dusk`/`sunrise`/`sunset` solar time keywords.
+- Parse raw point-in-time strings (e.g. `collection_times`, `service_times`) into the matching OSM format, dropping any "closed" days rather than erroring (since point-in-time tags have no "closed" concept of their own).
+- Raise a clear error instead of guessing when opening hours/point-in-time input references calendar/date-based rules (month names, specific dates, named holidays, or OSM's `Th[4]`-style nth-weekday notation), which aren't supported.
 
 ## Usage
 
@@ -41,8 +43,12 @@ pip install atlus
 {"addr:housenumber": "789", "addr:street": "Oak Drive", "addr:city": "Smallville", "addr:state": "CA", "addr:postcode": "98765"}
 >>> atlus.get_phone("(202) 900-9019")
 "+1-202-900-9019"
->>> atlus.get_hours("Mon-Sun 9-5")
-"Mo-Su 09:00-17:00"
+>>> atlus.get_hours("Monday to Friday 9am-5pm, Saturday 9am-12pm")
+"Mo-Fr 09:00-17:00; Sa 09:00-12:00"
+>>> atlus.get_times("Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00")
+"Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00"
+>>> atlus.get_hours("Mo-Fr sunrise-sunset")
+"Mo-Fr sunrise-sunset"
 ```
 
 ## Docs

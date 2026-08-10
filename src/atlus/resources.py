@@ -526,77 +526,219 @@ day_expand = {
     "MON": "Mo",
     "MO": "Mo",
     "M": "Mo",
+    "MONDAYS": "Mo",
     "TUESDAY": "Tu",
     "TUES": "Tu",
     "TUE": "Tu",
     "TU": "Tu",
+    "TUESDAYS": "Tu",
     "WEDNESDAY": "We",
     "WEDS": "We",
     "WED": "We",
     "WE": "We",
     "W": "We",
+    "WEDNESDAYS": "We",
     "THURSDAY": "Th",
     "THURS": "Th",
     "THUR": "Th",
     "THU": "Th",
+    "THR": "Th",
     "TH": "Th",
+    "THURSDAYS": "Th",
     "FRIDAY": "Fr",
     "FRI": "Fr",
     "FR": "Fr",
+    "FI": "Fr",  # surpisingly common in OSM, maybe typo in some software
     "F": "Fr",
+    "FRIDAYS": "Fr",
     "SATURDAY": "Sa",
     "SAT": "Sa",
     "SA": "Sa",
+    "SATS": "Sa",
+    "SATURDAYS": "Sa",
     "SUNDAY": "Su",
     "SUN": "Su",
     "SU": "Su",
+    "SUNDAYS": "Su",
+    "SUNS": "Su",
+    # Spanish
+    "LUNES": "Mo",
+    "LUN": "Mo",
+    "MARTES": "Tu",
+    "MAR": "Tu",
+    "MIERCOLES": "We",
+    "MIÉRCOLES": "We",
+    "MIE": "We",
+    "JUEVES": "Th",
+    "JUE": "Th",
+    "VIERNES": "Fr",
+    "VIE": "Fr",
+    "SABADO": "Sa",
+    "SÁBADO": "Sa",
+    "SABADOS": "Sa",
+    "SÁBADOS": "Sa",
+    "SAB": "Sa",
+    "DOMINGO": "Su",
+    "DOMINGOS": "Su",
+    # French
+    "LUNDI": "Mo",
+    "MARDI": "Tu",
+    "MERCREDI": "We",
+    "JEUDI": "Th",
+    "VENDREDI": "Fr",
+    "SAMEDI": "Sa",
+    "DIMANCHE": "Su",
+    # German
+    "MONTAG": "Mo",
+    "DIENSTAG": "Tu",
+    "MITTWOCH": "We",
+    "DONNERSTAG": "Th",
+    "FREITAG": "Fr",
+    "SAMSTAG": "Sa",
+    "SONNTAG": "Su",
+    # public holiday indicator -- a real "8th day" in OSM syntax, with no
+    # other accepted aliases or forms
+    "PH": "PH",
 }
 """Map day names/abbreviations to OSM two-letter day codes."""
 
 day_order = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 """Canonical OSM day ordering."""
 
+day_index = {day: i for i, day in enumerate(day_order)}
+"""Map day codes to their position in the week, for fast O(1) lookups."""
+
 DAY_ALT = "|".join(sorted(day_expand, key=len, reverse=True))
-day_comp = regex.compile(rf"\b(?:{DAY_ALT})\b\.?", flags=regex.IGNORECASE)
+# Avoid matching single-letter days (M, W, F) when preceded by a period
+# (e.g., "a.m.", "p.m.") -- use negative lookbehind
+day_comp = regex.compile(
+    rf"(?<![a-zA-Z]\.)\b(?:{DAY_ALT})\b\.?", flags=regex.IGNORECASE
+)
+
+# looser day-name detector that also matches when a day name is glued
+# directly to a following digit with no separator (e.g. "Friday10:00 AM"),
+# used only to detect the *presence* of day info rather than to extract it
+day_present_comp = regex.compile(
+    rf"\b(?:{DAY_ALT})(?![a-zA-Z])", flags=regex.IGNORECASE
+)
 
 day_range_comp = regex.compile(
-    rf"\b(?:{DAY_ALT})\b\.?(?:\s*(?:-|to|\u2013|\u2014)\s*\b(?:{DAY_ALT})\b\.?)?",
+    rf"\b(?:{DAY_ALT})\b\.?(?:\s*(?:-|to|through|thru|a|\u2013|\u2014|\u2015)\s*\b(?:{DAY_ALT})\b\.?)?",
     flags=regex.IGNORECASE,
 )
 
 weekday_comp = regex.compile(r"\bweekdays?\b", flags=regex.IGNORECASE)
 weekend_comp = regex.compile(r"\bweekends?\b", flags=regex.IGNORECASE)
-daily_comp = regex.compile(r"\b(?:daily|every ?day)\b", flags=regex.IGNORECASE)
+daily_comp = regex.compile(
+    r"\b(?:daily|every ?day|todos los dias)\b", flags=regex.IGNORECASE
+)
 closed_comp = regex.compile(r"\b(?:closed|off)\b", flags=regex.IGNORECASE)
 day_24_comp = regex.compile(
     r"\b(?:24\s*/\s*7|24\s*hours?(?:\s+a\s+day)?|all\s*day|open\s*24)\b",
     flags=regex.IGNORECASE,
 )
 
-# split a string into multiple top-level rule segments on ";" or newlines
-rule_split_comp = regex.compile(r"\s*;\s*|\r?\n+\s*", flags=regex.IGNORECASE)
+# month names, in either abbreviated or full form -- used only to *detect*
+# (and reject) calendar/date-based rules that this package doesn't attempt
+# to parse, such as "Jan 1 off" or "Dec 25 off"
+MONTH_ALT = (
+    r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?"
+    r"|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+)
+month_comp = regex.compile(rf"\b(?:{MONTH_ALT})\b", flags=regex.IGNORECASE)
+
+# OSM's "nth weekday of month" notation, e.g. "Th[4]" (fourth Thursday) or
+# "Su[-1]" (last Sunday) -- also unsupported and rejected outright
+nth_weekday_comp = regex.compile(
+    rf"\b(?:{DAY_ALT})\s*\[\s*-?\d+\s*\]", flags=regex.IGNORECASE
+)
+
+# common named holidays that OSM opening_hours values sometimes reference
+# directly instead of (or in addition to) a calendar date -- also
+# unsupported and rejected outright
+HOLIDAY_ALT = "|".join(
+    [
+        "easter",
+        "good friday",
+        "thanksgiving",
+        "christmas(?: day|eve)?",
+        "boxing day",
+        "halloween",
+        "new\\s*year'?s?(?:\\s*day)?",
+        "victoria day",
+        "labou?r day",
+        "memorial day",
+        "independence day",
+        "veterans day",
+        "presidents'?\\s*day",
+        "columbus day",
+        "indigenous peoples'?\\s*day",
+        "mlk day",
+        "martin luther king,?\\s*jr\\.?\\s*day",
+        "juneteenth",
+    ]
+)
+holiday_name_comp = regex.compile(rf"\b(?:{HOLIDAY_ALT})\b", flags=regex.IGNORECASE)
+
+# split a string into multiple top-level rule segments on ";", newlines, a
+# middle dot ("·") or bullet ("•"), a slash surrounded by whitespace, or a
+# pipe, which are sometimes used as rule separators -- the whitespace
+# requirement on the slash keeps it from splitting compact forms like "24/7"
+rule_split_comp = regex.compile(
+    r"\s*;\s*|\r?\n+\s*|\s*[\u00b7\u2022\u2016\u00A6]\s*|\s+/\s+|\s*\|\s*",
+    flags=regex.IGNORECASE,
+)
+
+# phrases that carry no day/time information of their own and should be
+# discarded entirely wherever they appear (e.g. "Last Seating" following a
+# closing time)
+ignored_phrase_comp = regex.compile(
+    r"\b(last seatings?|last call)\b", flags=regex.IGNORECASE
+)
 
 # a comma that introduces a brand new day token, used to further split a
 # top-level segment -- only applied when the text before it already looks
 # like it contains time/status information (see _split_comma_days)
 comma_day_comp = regex.compile(rf",\s*(?=(?:{DAY_ALT})\b)", flags=regex.IGNORECASE)
 
-# first place a digit, clock keyword, or the words "closed"/"off"/"24" appear
-# -- everything before this point is assumed to be the "day" portion of a
-# rule segment
-time_start_comp = regex.compile(
-    r"\d|closed|off|noon|midnight|24\s*/\s*7|24\s*hours?|all\s*day",
+# whitespace (with no comma/semicolon/etc.) that introduces a brand new day
+# token, used to split adjacent rules that have no separator between them
+# at all (e.g. "Mo-Fr 08:00-21:00 Sa-Su 08:00-18:00") -- only applied when
+# the text before it already looks like a complete day+time rule (see
+# _split_space_days), and not when the day word is part of a day range or
+# "... to ..." phrase that's already being parsed (e.g. "Monday - Friday")
+space_day_comp = regex.compile(
+    rf"(?<![-\u2013\u2014,])(?<!\bto)(?<!\bthr(ough|u))(?<!\ba)\s+(?=(?:{DAY_ALT})\b\.?)",
     flags=regex.IGNORECASE,
 )
 
+# first place a digit, clock keyword, solar keyword (dawn/dusk/sunrise/
+# sunset), or the words "closed"/"off"/"24" appear -- everything before
+# this point is assumed to be the "day" portion of a rule segment
+time_start_comp = regex.compile(
+    r"\d|closed|off|noon|midnight|24\s*/\s*7|24\s*hours?|all\s*day"
+    r"|dawn|dusk|sunrise|sunset",
+    flags=regex.IGNORECASE,
+)
+
+# OSM's solar-relative time keywords, used in place of a clock time (e.g.
+# "sunrise-sunset"); rendered in the output exactly as-is, in lowercase
+solar_time_comp = regex.compile(
+    r"^(?:dawn|dusk|sunrise|sunset)$", flags=regex.IGNORECASE
+)
+
 # filler words that may appear in the "day" portion of a segment but carry
-# no day information of their own (e.g. "Open 24 hours")
-filler_comp = regex.compile(r"\b(?:open|hours?|hrs?)\b", flags=regex.IGNORECASE)
+# no day information of their own (e.g. "Open 24 hours", or the "at" in
+# "Sundays at 7:45 am")
+filler_comp = regex.compile(
+    r"\b(?:open|hours?|hrs?|at|available)\b", flags=regex.IGNORECASE
+)
 
 time_token_comp = regex.compile(
-    r"^(\d{1,2})(:(\d{2}))?\s*([ap]\.?m?\.?)?$", flags=regex.IGNORECASE
+    r"^(\d{1,2})([:.h]?(\d{2}))?\s*([ap]\.?m?\.?)?$", flags=regex.IGNORECASE
 )
 
 time_range_split_comp = regex.compile(
-    r"\s*(?:-|to|\u2013|\u2014)\s*", flags=regex.IGNORECASE
+    r"\s*(?:-{1,2}|to|through|thru|\ba\b(?!\.?m\.?\b)|\u2013|\u2014|\u2015)\s*",
+    flags=regex.IGNORECASE,
 )
