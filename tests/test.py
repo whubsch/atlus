@@ -414,6 +414,153 @@ def test_get_address() -> None:
         "addr:housenumber": "777",
         "addr:street": "Strawberry Street",
     }
+    assert get_address("665 W 5300 S, Murray, UT 84123")[0] == {
+        "addr:housenumber": "665",
+        "addr:street": "West 5300 South",
+        "addr:city": "Murray",
+        "addr:state": "UT",
+        "addr:postcode": "84123",
+    }
+    assert get_address("456 Elm Ave Ste 32, Anytown New York 12345")[0] == {
+        "addr:housenumber": "456",
+        "addr:street": "Elm Avenue",
+        "addr:unit": "32",
+        "addr:city": "Anytown",
+        "addr:state": "NY",
+        "addr:postcode": "12345",
+    }
+
+
+REAL_WORLD_ADDRESSES = [
+    # Full addresses with ZIP+4
+    pytest.param("345 Maple Road, Countryside PA 24680-0198"),
+    pytest.param("777 Oak Street, Springfield IL 62701"),
+    pytest.param("123 Main Street, New York NY 10001"),
+    # Addresses without ZIP code
+    pytest.param("250 Route 59, Airmont NY"),
+    pytest.param("456 Elm Avenue, Portland Oregon"),
+    pytest.param("789 Pine Road, Seattle WA"),
+    # Addresses without city
+    pytest.param("100 Market Street, CA 94105"),
+    pytest.param("505 Broadway, NY"),
+    # Addresses without state or ZIP
+    pytest.param("999 River Road, Boulder"),
+    pytest.param("321 Oak Lane, Denver"),
+    # Street-only addresses (no city, state, or ZIP)
+    pytest.param("555 South Michigan Avenue"),
+    pytest.param("1 Pennsylvania Avenue Northwest"),
+    pytest.param("33 West 42nd Street"),
+    pytest.param("8900 Sunset Boulevard"),
+    # Addresses with just number and street (abbreviated street type)
+    pytest.param("100 Market St"),
+    pytest.param("250 Oak Ave"),
+    pytest.param("500 Elm Dr"),
+    # Addresses with inconsistent abbreviations (mixed full and abbreviated)
+    pytest.param("1470 South Washington Street, North Attleboro MA"),
+    pytest.param("255 W Main St, Avon CT 06001"),
+    pytest.param("8064 North Brewerton Rd, Cicero New York 13039"),
+    pytest.param("100 E Elm Street, Denver Colorado"),
+    pytest.param("300 NW Lovejoy St, Portland OR"),
+    # Directional without city/state
+    pytest.param("1470 S Washington Street"),
+    pytest.param("255 West Main Street"),
+    pytest.param("8064 N Brewerton Road"),
+    # Addresses with unit/suite but no state
+    pytest.param("555 Hubbard Avenue, Suite 12, Pittsfield MA"),
+    pytest.param("100 S Michigan Ave, Apt 2500, Chicago Illinois"),
+    pytest.param("450 Sutter St Unit B, San Francisco CA"),
+    pytest.param("200 Park Ave S, Apt 1401, New York"),
+    # House number ranges
+    pytest.param("66-4 Parkhurst Road, Chelmsford MA 01824"),
+    pytest.param("1200-29 North Spring Street, Los Angeles CA"),
+    pytest.param("500-600 Broadway, New York NY 10012"),
+    # Routes with abbreviated forms
+    pytest.param("3949 Route 31, Clay NY 13041"),
+    pytest.param("25737 US Route 11, Evans Mills NY 13637"),
+    pytest.param("1201 Highway 300, Newburgh NY 12550"),
+    pytest.param("990 Route 5, Geneva NY 14456"),
+    # Mixed full and abbreviated road names
+    pytest.param("141 Washington Avenue Extension, Albany NY 12205"),
+    pytest.param("8 Embarcadero Plz, San Francisco CA 94111"),
+    pytest.param("233 S Wacker Dr, Chicago Illinois 60606"),
+    # Routes without full state name
+    pytest.param("4180 US Highway 431, Roanoke AL 36274"),
+    pytest.param("2643 Highway 280 W, Alexander City AL 35010"),
+    pytest.param("27520 Hwy 98, Daphne AL 36526"),
+    # Business/landmark addresses
+    pytest.param("101 Sanford Farm Shopping Center, Amsterdam NY 12010"),
+    pytest.param("200 Sunrise Mall, Massapequa NY 11758"),
+    pytest.param("161 Centereach Mall, Centereach NY 11720"),
+    # Complex/hyphenated streets
+    pytest.param("579 Troy-Schenectady Road, Latham NY 12110"),
+    pytest.param("3700 Highway 280-431 North, Phenix City AL 36867"),
+    pytest.param("5783 So Transit Road, Lockport NY 14094"),
+    # Numeric streets
+    pytest.param("3501 20th Avenue, Valley AL 36854"),
+    pytest.param("233 5th Ave Extension, Johnstown MA"),
+    pytest.param("100 Park Avenue South, New York NY"),
+    # Mixed case/abbreviation quirks
+    pytest.param("1470 south Washington street, North Attleboro ma 02760"),
+    pytest.param("255 WEST MAIN ST, AVON ct 06001"),
+    pytest.param("100 East ELM Street Denver CO"),
+    # Addresses with no separators
+    pytest.param("1000 Main Street, New York New York 10001"),
+    pytest.param("500 Oak Avenue, Denver Colorado 80202"),
+    # Extra commas/spaces
+    pytest.param("555 Hubbard Avenue, Suite 12, Pittsfield MA 01201"),
+    pytest.param("60603 South Michigan Avenue, Apt 2500, Chicago IL 60603"),
+    # Addresses with special characters
+    pytest.param("1234 O'Reilly Street, Boston 02101"),
+    pytest.param("5678 Saint James Road, Philadelphia PA"),
+    pytest.param("9999 Smith & Sons Lane, Houston"),
+    # Addresses with only abbreviations
+    pytest.param("123 N Main St"),
+    pytest.param("456 S Oak Ave"),
+    pytest.param("789 E Elm Rd"),
+    pytest.param("100 W Pine Dr"),
+    pytest.param("First N Main St"),
+    pytest.param("Second N Main St"),
+    pytest.param("Third N Main St"),
+    pytest.param("Fourth N Main St"),
+    pytest.param("Fifth N Main St"),
+    pytest.param("Sixth N Main St"),
+    # Route abbreviations without direction
+    pytest.param("8064 Brewerton Rd, Cicero NY 13039"),
+    pytest.param("2181 Pelham Pkwy, Pelham AL"),
+    pytest.param("165 Vaughan Ln, Pell City AL"),
+    # Mixed state representations
+    pytest.param("3700  Hwy  280-431  North,  Phenix City  AL  36867"),
+    pytest.param("1903 Cobbs Ford Rd, Prattville AL"),
+    pytest.param("4180 US Highway 431, Roanoke AL 36274"),
+    # Addresses with trailing/leading spaces
+    pytest.param("  13675 Highway 43, Russellville AL 35653  "),
+    pytest.param("  1095 Industrial Parkway, Saraland AL 36571  "),
+    # Business/campus addresses
+    pytest.param("150 Springville Station Boulevard, Springville AL 35146"),
+    pytest.param("690 Hwy 78, Sumiton AK 35148"),
+    pytest.param("41301 US Hwy 280, Sylacauga ALABAMA 35150"),
+    # Addresses with parentheses/brackets
+    pytest.param("555 Main Street (Downtown), Boston MA 02101"),
+    pytest.param("100 Oak Avenue [Suite 5], Denver CO 80202"),
+    # Addresses with newlines
+    pytest.param(
+        """555 Main Street
+        Boston MA 02101
+        USA""",
+        marks=pytest.mark.xfail(reason="postcode", strict=True),
+    ),
+    pytest.param("""100 E Oak Ave NW
+        Denver Colorado"""),
+]
+
+
+@pytest.mark.parametrize(("raw"), REAL_WORLD_ADDRESSES)
+def test_get_address_works(raw: str) -> None:
+    """Test cases for get address"""
+    parse = get_address(raw)
+    assert isinstance(parse[0], dict)
+    assert "addr:street" in parse[0] and "addr:housenumber" in parse[0]
+    assert not parse[1]
 
 
 def test_get_address_removed_unit() -> None:
