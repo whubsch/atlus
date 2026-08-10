@@ -42,9 +42,9 @@ def test_day_values() -> None:
 
 
 def test_day_index() -> None:
-    """Test Day.index returns week position."""
-    assert Day.MO.index == 0
-    assert Day.SU.index == 6
+    """Test Day.weekday_index returns week position."""
+    assert Day.MO.weekday_index == 0
+    assert Day.SU.weekday_index == 6
 
 
 def test_day_range_single_day() -> None:
