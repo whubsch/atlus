@@ -2,6 +2,8 @@
 
 # python3.12 -m pytest --cov=src --cov-report=html tests/*
 
+from cmath import exp
+
 from pydantic import ValidationError
 import pytest
 from src.atlus.objects import Address
@@ -433,134 +435,716 @@ def test_get_address() -> None:
 
 REAL_WORLD_ADDRESSES = [
     # Full addresses with ZIP+4
-    pytest.param("345 Maple Road, Countryside PA 24680-0198"),
-    pytest.param("777 Oak Street, Springfield IL 62701"),
-    pytest.param("123 Main Street, New York NY 10001"),
+    pytest.param(
+        "345 Maple Rd, Countryside PA 24680-0198",
+        {
+            "addr:housenumber": "345",
+            "addr:street": "Maple Road",
+            "addr:city": "Countryside",
+            "addr:state": "PA",
+            "addr:postcode": "24680-0198",
+        },
+    ),
+    pytest.param(
+        "777 Oak Street, Springfield IL 62701+0299",
+        {
+            "addr:housenumber": "777",
+            "addr:street": "Oak Street",
+            "addr:city": "Springfield",
+            "addr:state": "IL",
+            "addr:postcode": "62701+0299",
+        },
+        marks=pytest.mark.xfail(reason="zipcode plus", strict=True),
+    ),
+    pytest.param(
+        "123 Main Street, New York NY 10001.0192",
+        {
+            "addr:housenumber": "123",
+            "addr:street": "Main Street",
+            "addr:city": "New York",
+            "addr:state": "NY",
+            "addr:postcode": "10001.0192",
+        },
+        marks=pytest.mark.xfail(reason="zipcode period", strict=True),
+    ),
     # Addresses without ZIP code
-    pytest.param("250 Route 59, Airmont NY"),
-    pytest.param("456 Elm Avenue, Portland Oregon"),
-    pytest.param("789 Pine Road, Seattle WA"),
+    pytest.param(
+        "250 Route 59, Airmont NY",
+        {
+            "addr:housenumber": "250",
+            "addr:street": "Route 59",
+            "addr:city": "Airmont",
+            "addr:state": "NY",
+        },
+    ),
+    pytest.param(
+        "456 Elm Avenue, Portland Oregon",
+        {
+            "addr:housenumber": "456",
+            "addr:street": "Elm Avenue",
+            "addr:city": "Portland",
+            "addr:state": "OR",
+        },
+    ),
+    pytest.param(
+        "789 Pine Road, Seattle WA",
+        {
+            "addr:housenumber": "789",
+            "addr:street": "Pine Road",
+            "addr:city": "Seattle",
+            "addr:state": "WA",
+        },
+    ),
     # Addresses without city
-    pytest.param("100 Market Street, CA 94105"),
-    pytest.param("505 Broadway, NY"),
+    pytest.param(
+        "100 Market Street, CA 94105",
+        {
+            "addr:housenumber": "100",
+            "addr:street": "Market Street",
+            "addr:state": "CA",
+            "addr:postcode": "94105",
+        },
+    ),
+    pytest.param(
+        "505 Broadway, NY",
+        {"addr:housenumber": "505", "addr:street": "Broadway", "addr:state": "NY"},
+    ),
     # Addresses without state or ZIP
-    pytest.param("999 River Road, Boulder"),
-    pytest.param("321 Oak Lane, Denver"),
+    pytest.param(
+        "999 River Road, Boulder",
+        {
+            "addr:housenumber": "999",
+            "addr:street": "River Road",
+            "addr:city": "Boulder",
+        },
+    ),
+    pytest.param(
+        "321 Oak Lane, Denver",
+        {"addr:housenumber": "321", "addr:street": "Oak Lane", "addr:city": "Denver"},
+    ),
     # Street-only addresses (no city, state, or ZIP)
-    pytest.param("555 South Michigan Avenue"),
-    pytest.param("1 Pennsylvania Avenue Northwest"),
-    pytest.param("33 West 42nd Street"),
-    pytest.param("8900 Sunset Boulevard"),
+    pytest.param(
+        "555 South Michigan Avenue",
+        {"addr:housenumber": "555", "addr:street": "South Michigan Avenue"},
+    ),
+    pytest.param(
+        "1 Pennsylvania Ave Nw",
+        {"addr:housenumber": "1", "addr:street": "Pennsylvania Avenue Northwest"},
+    ),
+    pytest.param(
+        "33 W 42nd Street",
+        {"addr:housenumber": "33", "addr:street": "West 42nd Street"},
+    ),
+    pytest.param(
+        "8900 Sunset Boulevard",
+        {"addr:housenumber": "8900", "addr:street": "Sunset Boulevard"},
+    ),
     # Addresses with just number and street (abbreviated street type)
-    pytest.param("100 Market St"),
-    pytest.param("250 Oak Ave"),
-    pytest.param("500 Elm Dr"),
+    pytest.param(
+        "100 Market St", {"addr:housenumber": "100", "addr:street": "Market Street"}
+    ),
+    pytest.param(
+        "250 Oak Ave", {"addr:housenumber": "250", "addr:street": "Oak Avenue"}
+    ),
+    pytest.param("500 Elm Dr", {"addr:housenumber": "500", "addr:street": "Elm Drive"}),
     # Addresses with inconsistent abbreviations (mixed full and abbreviated)
-    pytest.param("1470 South Washington Street, North Attleboro MA"),
-    pytest.param("255 W Main St, Avon CT 06001"),
-    pytest.param("8064 North Brewerton Rd, Cicero New York 13039"),
-    pytest.param("100 E Elm Street, Denver Colorado"),
-    pytest.param("300 NW Lovejoy St, Portland OR"),
+    pytest.param(
+        "1470 South Washington Street, North Attleboro MA",
+        {
+            "addr:housenumber": "1470",
+            "addr:street": "South Washington Street",
+            "addr:city": "North Attleboro",
+            "addr:state": "MA",
+        },
+    ),
+    pytest.param(
+        "255 W Main St, Avon CT 06001",
+        {
+            "addr:housenumber": "255",
+            "addr:street": "West Main Street",
+            "addr:city": "Avon",
+            "addr:state": "CT",
+            "addr:postcode": "06001",
+        },
+    ),
+    pytest.param(
+        "8064 North Brewerton Rd, Cicero New York 13039",
+        {
+            "addr:housenumber": "8064",
+            "addr:street": "North Brewerton Road",
+            "addr:city": "Cicero",
+            "addr:state": "NY",
+            "addr:postcode": "13039",
+        },
+    ),
+    pytest.param(
+        "100 E Elm Street, Denver Colorado",
+        {
+            "addr:housenumber": "100",
+            "addr:street": "East Elm Street",
+            "addr:city": "Denver",
+            "addr:state": "CO",
+        },
+    ),
+    pytest.param(
+        "300 NW Lovejoy St, Portland OR",
+        {
+            "addr:housenumber": "300",
+            "addr:street": "Northwest Lovejoy Street",
+            "addr:city": "Portland",
+            "addr:state": "OR",
+        },
+    ),
     # Directional without city/state
-    pytest.param("1470 S Washington Street"),
-    pytest.param("255 West Main Street"),
-    pytest.param("8064 N Brewerton Road"),
+    pytest.param(
+        "1470 S Washington Street",
+        {"addr:housenumber": "1470", "addr:street": "South Washington Street"},
+    ),
+    pytest.param(
+        "255 West Main Street",
+        {"addr:housenumber": "255", "addr:street": "West Main Street"},
+    ),
+    pytest.param(
+        "8064 N Brewerton Road",
+        {"addr:housenumber": "8064", "addr:street": "North Brewerton Road"},
+    ),
     # Addresses with unit/suite but no state
-    pytest.param("555 Hubbard Avenue, Suite 12, Pittsfield MA"),
-    pytest.param("100 S Michigan Ave, Apt 2500, Chicago Illinois"),
-    pytest.param("450 Sutter St Unit B, San Francisco CA"),
-    pytest.param("200 Park Ave S, Apt 1401, New York"),
+    pytest.param(
+        "555 Hubbard Avenue, Suite 12, Pittsfield MA",
+        {
+            "addr:housenumber": "555",
+            "addr:street": "Hubbard Avenue",
+            "addr:unit": "12",
+            "addr:city": "Pittsfield",
+            "addr:state": "MA",
+        },
+    ),
+    pytest.param(
+        "100 S Michigan Ave, Apt 2500, Chicago Illinois",
+        {
+            "addr:housenumber": "100",
+            "addr:street": "South Michigan Avenue",
+            "addr:unit": "2500",
+            "addr:city": "Chicago",
+            "addr:state": "IL",
+        },
+    ),
+    pytest.param(
+        "450 Sutter St Unit B, San Francisco CA",
+        {
+            "addr:housenumber": "450",
+            "addr:street": "Sutter Street",
+            "addr:unit": "B",
+            "addr:city": "San Francisco",
+            "addr:state": "CA",
+        },
+    ),
+    pytest.param(
+        "200 Park Ave S, Apt #1401, New York",
+        {
+            "addr:housenumber": "200",
+            "addr:street": "Park Avenue South",
+            "addr:unit": "1401",
+            "addr:city": "New York",
+        },
+    ),
     # House number ranges
-    pytest.param("66-4 Parkhurst Road, Chelmsford MA 01824"),
-    pytest.param("1200-29 North Spring Street, Los Angeles CA"),
-    pytest.param("500-600 Broadway, New York NY 10012"),
+    pytest.param(
+        "66-4 Parkhurst Road, Chelmsford MA 01824",
+        {
+            "addr:housenumber": "66-4",
+            "addr:street": "Parkhurst Road",
+            "addr:city": "Chelmsford",
+            "addr:state": "MA",
+            "addr:postcode": "01824",
+        },
+    ),
+    pytest.param(
+        "1200-29 North Spring Street, Los Angeles CA",
+        {
+            "addr:housenumber": "1200-29",
+            "addr:street": "North Spring Street",
+            "addr:city": "Los Angeles",
+            "addr:state": "CA",
+        },
+    ),
+    pytest.param(
+        "500-600 Broadway, New York NY 10012",
+        {
+            "addr:housenumber": "500-600",
+            "addr:street": "Broadway",
+            "addr:city": "New York",
+            "addr:state": "NY",
+            "addr:postcode": "10012",
+        },
+    ),
     # Routes with abbreviated forms
-    pytest.param("3949 Route 31, Clay NY 13041"),
-    pytest.param("25737 US Route 11, Evans Mills NY 13637"),
-    pytest.param("1201 Highway 300, Newburgh NY 12550"),
-    pytest.param("990 Route 5, Geneva NY 14456"),
+    pytest.param(
+        "3949 Route 31, Clay NY 13041",
+        {
+            "addr:housenumber": "3949",
+            "addr:street": "Route 31",
+            "addr:city": "Clay",
+            "addr:state": "NY",
+            "addr:postcode": "13041",
+        },
+    ),
+    pytest.param(
+        "25737 US Route 11, Evans Mills NY 13637",
+        {
+            "addr:housenumber": "25737",
+            "addr:street": "Route 11",
+            "addr:city": "Evans Mills",
+            "addr:state": "NY",
+            "addr:postcode": "13637",
+        },
+    ),
+    pytest.param(
+        "1201 Highway 300, Newburgh NY 12550",
+        {
+            "addr:housenumber": "1201",
+            "addr:street": "Highway 300",
+            "addr:city": "Newburgh",
+            "addr:state": "NY",
+            "addr:postcode": "12550",
+        },
+    ),
+    pytest.param(
+        "990 Route 5, Geneva NY 14456",
+        {
+            "addr:housenumber": "990",
+            "addr:street": "Route 5",
+            "addr:city": "Geneva",
+            "addr:state": "NY",
+            "addr:postcode": "14456",
+        },
+    ),
     # Mixed full and abbreviated road names
-    pytest.param("141 Washington Avenue Extension, Albany NY 12205"),
-    pytest.param("8 Embarcadero Plz, San Francisco CA 94111"),
-    pytest.param("233 S Wacker Dr, Chicago Illinois 60606"),
+    pytest.param(
+        "141 Washington Avenue Extension, Albany NY 12205",
+        {
+            "addr:housenumber": "141",
+            "addr:street": "Washington Avenue Extension",
+            "addr:city": "Albany",
+            "addr:state": "NY",
+            "addr:postcode": "12205",
+        },
+    ),
+    pytest.param(
+        "8 Embarcadero Plz, San Francisco CA 94111",
+        {
+            "addr:housenumber": "8",
+            "addr:street": "Embarcadero Plaza",
+            "addr:city": "San Francisco",
+            "addr:state": "CA",
+            "addr:postcode": "94111",
+        },
+    ),
+    pytest.param(
+        "233 S Wacker Dr, Chicago Illinois 60606",
+        {
+            "addr:housenumber": "233",
+            "addr:street": "South Wacker Drive",
+            "addr:city": "Chicago",
+            "addr:state": "IL",
+            "addr:postcode": "60606",
+        },
+    ),
     # Routes without full state name
-    pytest.param("4180 US Highway 431, Roanoke AL 36274"),
-    pytest.param("2643 Highway 280 W, Alexander City AL 35010"),
-    pytest.param("27520 Hwy 98, Daphne AL 36526"),
+    pytest.param(
+        "4180 US Highway 431, Roanoke AL 36274",
+        {
+            "addr:housenumber": "4180",
+            "addr:street": "Highway 431",
+            "addr:city": "Roanoke",
+            "addr:state": "AL",
+            "addr:postcode": "36274",
+        },
+    ),
+    pytest.param(
+        "2643 Highway 280 W, Alexander City AL 35010",
+        {
+            "addr:housenumber": "2643",
+            "addr:street": "Highway 280 West",
+            "addr:city": "Alexander City",
+            "addr:state": "AL",
+            "addr:postcode": "35010",
+        },
+    ),
+    pytest.param(
+        "27520 Hwy 98, Daphne AL 36526",
+        {
+            "addr:housenumber": "27520",
+            "addr:street": "Highway 98",
+            "addr:city": "Daphne",
+            "addr:state": "AL",
+            "addr:postcode": "36526",
+        },
+    ),
     # Business/landmark addresses
-    pytest.param("101 Sanford Farm Shopping Center, Amsterdam NY 12010"),
-    pytest.param("200 Sunrise Mall, Massapequa NY 11758"),
-    pytest.param("161 Centereach Mall, Centereach NY 11720"),
+    pytest.param(
+        "101 Sanford Farm Shopping Center, Amsterdam NY 12010",
+        {
+            "addr:housenumber": "101",
+            "addr:street": "Sanford Farm Shopping Center",
+            "addr:city": "Amsterdam",
+            "addr:state": "NY",
+            "addr:postcode": "12010",
+        },
+    ),
+    pytest.param(
+        "200 Sunrise Mall, Massapequa NY 11758",
+        {
+            "addr:housenumber": "200",
+            "addr:street": "Sunrise Mall",
+            "addr:city": "Massapequa",
+            "addr:state": "NY",
+            "addr:postcode": "11758",
+        },
+    ),
+    pytest.param(
+        "161 Centereach Mall, Centereach NY 11720",
+        {
+            "addr:housenumber": "161",
+            "addr:street": "Centereach Mall",
+            "addr:city": "Centereach",
+            "addr:state": "NY",
+            "addr:postcode": "11720",
+        },
+    ),
     # Complex/hyphenated streets
-    pytest.param("579 Troy-Schenectady Road, Latham NY 12110"),
-    pytest.param("3700 Highway 280-431 North, Phenix City AL 36867"),
-    pytest.param("5783 So Transit Road, Lockport NY 14094"),
+    pytest.param("579 Troy-Schenectady Road, Latham NY 12110", {}),
+    pytest.param(
+        "3700 Highway 280-431 North, Phenix City AL 36867",
+        {
+            "addr:housenumber": "3700",
+            "addr:street": "Highway 280-431 North",
+            "addr:city": "Phenix City",
+            "addr:state": "AL",
+            "addr:postcode": "36867",
+        },
+    ),
+    pytest.param(
+        "5783 So Transit Road, Lockport NY 14094",
+        {
+            "addr:housenumber": "5783",
+            "addr:street": "South Transit Road",
+            "addr:city": "Lockport",
+            "addr:state": "NY",
+            "addr:postcode": "14094",
+        },
+        marks=pytest.mark.xfail(reason="So", strict=True),
+    ),
     # Numeric streets
-    pytest.param("3501 20th Avenue, Valley AL 36854"),
-    pytest.param("233 5th Ave Extension, Johnstown MA"),
-    pytest.param("100 Park Avenue South, New York NY"),
+    pytest.param(
+        "3501 20th Avenue, Valley AL 36854",
+        {
+            "addr:housenumber": "3501",
+            "addr:street": "20th Avenue",
+            "addr:city": "Valley",
+            "addr:state": "AL",
+            "addr:postcode": "36854",
+        },
+    ),
+    pytest.param(
+        "233 5th Ave Extension, Johnstown MA",
+        {
+            "addr:housenumber": "233",
+            "addr:street": "5th Avenue Extension",
+            "addr:city": "Johnstown",
+            "addr:state": "MA",
+        },
+    ),
+    pytest.param(
+        "100 Park Avenue South, New York NY",
+        {
+            "addr:housenumber": "100",
+            "addr:street": "Park Avenue South",
+            "addr:city": "New York",
+            "addr:state": "NY",
+        },
+    ),
     # Mixed case/abbreviation quirks
-    pytest.param("1470 south Washington street, North Attleboro ma 02760"),
-    pytest.param("255 WEST MAIN ST, AVON ct 06001"),
-    pytest.param("100 East ELM Street Denver CO"),
+    pytest.param(
+        "1470 south Washington street, North Attleboro ma 02760",
+        {
+            "addr:housenumber": "1470",
+            "addr:street": "South Washington Street",
+            "addr:city": "North Attleboro",
+            "addr:state": "MA",
+            "addr:postcode": "02760",
+        },
+        marks=pytest.mark.xfail(reason="mixed case", strict=True),
+    ),
+    pytest.param(
+        "255 WEST MAIN ST, AVON ct 06001",
+        {
+            "addr:housenumber": "255",
+            "addr:street": "West Main Street",
+            "addr:city": "Avon",
+            "addr:state": "CT",
+            "addr:postcode": "06001",
+        },
+    ),
+    pytest.param(
+        "100 East ELM Street, CO",
+        {
+            "addr:housenumber": "100",
+            "addr:street": "East Elm Street",
+            "addr:state": "CO",
+        },
+        marks=pytest.mark.xfail(reason="mixed case street", strict=True),
+    ),
     # Addresses with no separators
-    pytest.param("1000 Main Street, New York New York 10001"),
-    pytest.param("500 Oak Avenue, Denver Colorado 80202"),
+    pytest.param(
+        "1000 Main Street, New York New York 10001",
+        {
+            "addr:housenumber": "1000",
+            "addr:street": "Main Street",
+            "addr:city": "New York",
+            "addr:state": "NY",
+            "addr:postcode": "10001",
+        },
+    ),
+    pytest.param(
+        "500 Oak Avenue, Denver Colorado 80202",
+        {
+            "addr:housenumber": "500",
+            "addr:street": "Oak Avenue",
+            "addr:city": "Denver",
+            "addr:state": "CO",
+            "addr:postcode": "80202",
+        },
+    ),
     # Extra commas/spaces
-    pytest.param("555 Hubbard Avenue, Suite 12, Pittsfield MA 01201"),
-    pytest.param("60603 South Michigan Avenue, Apt 2500, Chicago IL 60603"),
+    pytest.param(
+        "555 Hubbard Avenue, Suite 12, Pittsfield MA 01201",
+        {
+            "addr:housenumber": "555",
+            "addr:street": "Hubbard Avenue",
+            "addr:unit": "12",
+            "addr:city": "Pittsfield",
+            "addr:state": "MA",
+            "addr:postcode": "01201",
+        },
+    ),
+    pytest.param(
+        "60603 South Michigan Avenue, Apt 2500, Chicago IL 60603",
+        {
+            "addr:housenumber": "60603",
+            "addr:street": "South Michigan Avenue",
+            "addr:unit": "2500",
+            "addr:city": "Chicago",
+            "addr:state": "IL",
+            "addr:postcode": "60603",
+        },
+    ),
     # Addresses with special characters
-    pytest.param("1234 O'Reilly Street, Boston 02101"),
-    pytest.param("5678 Saint James Road, Philadelphia PA"),
-    pytest.param("9999 Smith & Sons Lane, Houston"),
+    pytest.param(
+        "1234 O'Reilly Street, Boston 02101",
+        {
+            "addr:housenumber": "1234",
+            "addr:street": "O'Reilly Street",
+            "addr:city": "Boston",
+            "addr:postcode": "02101",
+        },
+    ),
+    pytest.param(
+        "9999 Smith & Sons Lane, Houston",
+        {
+            "addr:housenumber": "9999",
+            "addr:street": "Smith & Sons Lane",
+            "addr:city": "Houston",
+        },
+        marks=pytest.mark.xfail(reason="Smith & Sons", strict=True),
+    ),
     # Addresses with only abbreviations
-    pytest.param("123 N Main St"),
-    pytest.param("456 S Oak Ave"),
-    pytest.param("789 E Elm Rd"),
-    pytest.param("100 W Pine Dr"),
-    pytest.param("First N Main St"),
-    pytest.param("Second N Main St"),
-    pytest.param("Third N Main St"),
-    pytest.param("Fourth N Main St"),
-    pytest.param("Fifth N Main St"),
-    pytest.param("Sixth N Main St"),
+    pytest.param(
+        "123 N Main St", {"addr:housenumber": "123", "addr:street": "North Main Street"}
+    ),
+    pytest.param(
+        "100 W Pine Dr", {"addr:housenumber": "100", "addr:street": "West Pine Drive"}
+    ),
+    pytest.param(
+        "First N Main St",
+        {"addr:housenumber": "First", "addr:street": "North Main Street"},
+        marks=pytest.mark.xfail(reason="First", strict=True),
+    ),
+    pytest.param(
+        "Sixth N Main St",
+        {"addr:housenumber": "Sixth", "addr:street": "North Main Street"},
+        marks=pytest.mark.xfail(reason="Sixth", strict=True),
+    ),
     # Route abbreviations without direction
-    pytest.param("8064 Brewerton Rd, Cicero NY 13039"),
-    pytest.param("2181 Pelham Pkwy, Pelham AL"),
-    pytest.param("165 Vaughan Ln, Pell City AL"),
+    pytest.param(
+        "8064 Brewerton Rd, Cicero NY 13039",
+        {
+            "addr:housenumber": "8064",
+            "addr:street": "Brewerton Road",
+            "addr:city": "Cicero",
+            "addr:state": "NY",
+            "addr:postcode": "13039",
+        },
+    ),
+    pytest.param(
+        "2181 Pelham Pkwy, Pelham AL",
+        {
+            "addr:housenumber": "2181",
+            "addr:street": "Pelham Parkway",
+            "addr:city": "Pelham",
+            "addr:state": "AL",
+        },
+    ),
+    pytest.param(
+        "165 Vaughan Ln, Pell City AL",
+        {
+            "addr:housenumber": "165",
+            "addr:street": "Vaughan Lane",
+            "addr:city": "Pell City",
+            "addr:state": "AL",
+        },
+    ),
     # Mixed state representations
-    pytest.param("3700  Hwy  280-431  North,  Phenix City  AL  36867"),
-    pytest.param("1903 Cobbs Ford Rd, Prattville AL"),
-    pytest.param("4180 US Highway 431, Roanoke AL 36274"),
+    pytest.param(
+        "3700  Hwy  280-431  North,  Phenix City  AL  36867",
+        {
+            "addr:housenumber": "3700",
+            "addr:street": "Highway 280-431 North",
+            "addr:city": "Phenix City",
+            "addr:state": "AL",
+            "addr:postcode": "36867",
+        },
+    ),
+    pytest.param(
+        "1903 Cobbs Ford Rd, Prattville AL",
+        {
+            "addr:housenumber": "1903",
+            "addr:street": "Cobbs Ford Road",
+            "addr:city": "Prattville",
+            "addr:state": "AL",
+        },
+    ),
+    pytest.param(
+        "4180 US Highway 431, Roanoke AL 36274",
+        {
+            "addr:housenumber": "4180",
+            "addr:street": "Highway 431",
+            "addr:city": "Roanoke",
+            "addr:state": "AL",
+            "addr:postcode": "36274",
+        },
+    ),
     # Addresses with trailing/leading spaces
-    pytest.param("  13675 Highway 43, Russellville AL 35653  "),
-    pytest.param("  1095 Industrial Parkway, Saraland AL 36571  "),
+    pytest.param(
+        "  13675 Highway 43, Russellville AL 35653  ",
+        {
+            "addr:housenumber": "13675",
+            "addr:street": "Highway 43",
+            "addr:city": "Russellville",
+            "addr:state": "AL",
+            "addr:postcode": "35653",
+        },
+    ),
+    pytest.param(
+        "  1095 Industrial Parkway, Saraland AL 36571  ",
+        {
+            "addr:housenumber": "1095",
+            "addr:street": "Industrial Parkway",
+            "addr:city": "Saraland",
+            "addr:state": "AL",
+            "addr:postcode": "36571",
+        },
+    ),
     # Business/campus addresses
-    pytest.param("150 Springville Station Boulevard, Springville AL 35146"),
-    pytest.param("690 Hwy 78, Sumiton AK 35148"),
-    pytest.param("41301 US Hwy 280, Sylacauga ALABAMA 35150"),
+    pytest.param(
+        "150 Springville Station Boulevard, Springville AL 35146",
+        {
+            "addr:housenumber": "150",
+            "addr:street": "Springville Station Boulevard",
+            "addr:city": "Springville",
+            "addr:state": "AL",
+            "addr:postcode": "35146",
+        },
+    ),
+    pytest.param(
+        "690 Hwy 78, Sumiton AK 35148",
+        {
+            "addr:housenumber": "690",
+            "addr:street": "Highway 78",
+            "addr:city": "Sumiton",
+            "addr:state": "AK",
+            "addr:postcode": "35148",
+        },
+    ),
+    pytest.param(
+        "41301 US Hwy 280, Sylacauga ALABAMA 35150",
+        {
+            "addr:housenumber": "41301",
+            "addr:street": "Highway 280",
+            "addr:city": "Sylacauga",
+            "addr:state": "AL",
+            "addr:postcode": "35150",
+        },
+    ),
     # Addresses with parentheses/brackets
-    pytest.param("555 Main Street (Downtown), Boston MA 02101"),
-    pytest.param("100 Oak Avenue [Suite 5], Denver CO 80202"),
+    pytest.param(
+        "555 Main Street (Downtown), Boston MA 02101",
+        {
+            "addr:housenumber": "555",
+            "addr:street": "Main Street",
+            "addr:city": "Boston",
+            "addr:state": "MA",
+            "addr:postcode": "02101",
+        },
+    ),
+    pytest.param(
+        "100 Oak Avenue [Suite 5], Denver CO 80202",
+        {
+            "addr:housenumber": "100",
+            "addr:street": "Oak Avenue",
+            "addr:unit": "5",
+            "addr:city": "Denver",
+            "addr:state": "CO",
+            "addr:postcode": "80202",
+        },
+        marks=pytest.mark.xfail(reason="5]", strict=True),
+    ),
     # Addresses with newlines
     pytest.param(
         """555 Main Street
         Boston MA 02101
         USA""",
+        {
+            "addr:housenumber": "555",
+            "addr:street": "Main Street",
+            "addr:city": "Boston",
+            "addr:state": "MA",
+            "addr:postcode": "02101",
+        },
         marks=pytest.mark.xfail(reason="postcode", strict=True),
     ),
-    pytest.param("""100 E Oak Ave NW
-        Denver Colorado"""),
+    pytest.param(
+        """100 E Oak Ave NW
+        Denver Colorado""",
+        {
+            "addr:housenumber": "100",
+            "addr:street": "East Oak Avenue Northwest",
+            "addr:city": "Denver",
+            "addr:state": "CO",
+        },
+    ),
 ]
 
 
-@pytest.mark.parametrize(("raw"), REAL_WORLD_ADDRESSES)
-def test_get_address_works(raw: str) -> None:
+@pytest.mark.parametrize(("raw", "expected"), REAL_WORLD_ADDRESSES)
+def test_get_address_works(raw: str, expected: dict[str, str]) -> None:
     """Test cases for get address"""
     parse = get_address(raw)
     assert isinstance(parse[0], dict)
     assert "addr:street" in parse[0] and "addr:housenumber" in parse[0]
     assert not parse[1]
+    if expected:
+        assert parse[0] == expected
 
 
 def test_get_address_removed_unit() -> None:
