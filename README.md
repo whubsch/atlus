@@ -51,6 +51,10 @@ pip install atlus
 "Mo-Fr sunrise-sunset"
 ```
 
+## Changes
+
+See the [changelog](CHANGELOG.md) for details on recent updates.
+
 ## Docs
 
 The documentation for our package is available online at our [documentation page](https://whubsch.github.io/atlus/index.html). We would greatly appreciate your contributions to help improve the auto-generated docs; please submit any updates or corrections via pull requests.
