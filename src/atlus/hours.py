@@ -7,8 +7,6 @@ This module handles two related but distinct OSM conventions:
   `get_times`.
 """
 
-import regex
-
 from .objects import (
     Day,
     DayRange,
@@ -18,35 +16,41 @@ from .objects import (
     RuleSet,
     TimeSpan,
 )
-
-EARLY_MORNING_CUTOFF_HOUR = 6
-"""The latest hour (24-hour, exclusive) still considered a plausible
-overnight closing time, e.g. "2am" or "5am" but not "2pm"."""
 from .resources import (
     closed_comp,
     comma_day_comp,
+    comma_split_comp,
     daily_comp,
     day_24_comp,
     day_comp,
     day_expand,
     day_index,
-    day_present_comp,
+    day_list_split_comp,
     day_order,
+    day_present_comp,
     day_range_comp,
     filler_comp,
     holiday_name_comp,
+    horizontal_ws_comp,
     ignored_phrase_comp,
+    letter_period_comp,
     month_comp,
     nth_weekday_comp,
     rule_split_comp,
     solar_time_comp,
     space_day_comp,
+    spanish_de_comp,
+    spanish_y_comp,
     time_range_split_comp,
     time_start_comp,
     time_token_comp,
     weekday_comp,
     weekend_comp,
 )
+
+EARLY_MORNING_CUTOFF_HOUR = 6
+"""The latest hour (24-hour, exclusive) still considered a plausible
+overnight closing time, e.g. "2am" or "5am" but not "2pm"."""
 
 
 def _normalize(value: str) -> str:
@@ -60,28 +64,31 @@ def _normalize(value: str) -> str:
     """
     value = value.replace("&", ",").replace("and", ",")
     # Replace Spanish "y" (and) and "de" (of/from) with comma, using word
-    # boundaries to avoid matching letters within words
-    value = regex.sub(r"\by\b", ",", value, flags=regex.IGNORECASE)
-    value = regex.sub(r"\bde\b", "", value, flags=regex.IGNORECASE)
+    # boundaries to avoid matching letters within words. Both patterns need
+    # their literal letters present, so a containment check can skip the scan.
+    lowered = value.lower()
+    if "y" in lowered:
+        value = spanish_y_comp.sub(",", value)
+    if "de" in lowered:
+        value = spanish_de_comp.sub("", value)
     # drop phrases that carry no day/time information of their own (e.g.
     # "Last Seating") before any other parsing happens
     value = ignored_phrase_comp.sub("", value)
     # collapse horizontal whitespace only -- newlines are meaningful rule
-    # separators and are handled by rule_split_comp
-    value = regex.sub(r"[ \t]+", " ", value)
+    # separators and are handled by rule_split_comp. A lone space is replaced
+    # by itself, so only a run or a tab can actually change the string.
+    if "  " in value or "\t" in value:
+        value = horizontal_ws_comp.sub(" ", value)
     value = value.strip(" ,")
     # strip trailing periods only if NOT part of a.m./p.m. abbreviation
     # (i.e., not preceded by a single letter like "a." or "p.")
-    while value.endswith(".") and not regex.search(
-        r"[a-z]\.$", value, flags=regex.IGNORECASE
-    ):
+    while value.endswith(".") and not letter_period_comp.search(value):
         value = value[:-1].rstrip(" .,")
     return value
 
 
 def _reject_unsupported_calendar_refs(value: str) -> None:
-    """Raise if the string references calendar/date-based rules that this
-    package doesn't attempt to parse, rather than silently mangling them.
+    """Raise if the string references unsupported calendar/date-based rules.
 
     This includes month names or specific dates (e.g. "Jan 1", "Dec 25"),
     named holidays (e.g. "Easter", "Thanksgiving"), and OSM's "nth weekday
@@ -119,7 +126,7 @@ def _parse_days(day_part: str) -> list[DayRange]:
         list[DayRange]: The parsed day ranges. Empty means "every day".
     """
     day_part = filler_comp.sub(" ", day_part)
-    day_part = regex.sub(r"\s+", " ", day_part).strip(" ,-\u2013\u2014\u2015")
+    day_part = " ".join(day_part.split()).strip(" ,-\u2013\u2014\u2015")
     if not day_part:
         return []
 
@@ -133,7 +140,7 @@ def _parse_days(day_part: str) -> list[DayRange]:
     ranges: list[DayRange] = []
     # a slash between day names is used as a list separator (e.g. "We/Sa"
     # meaning "We, Sa"), not a range -- treat it the same as a comma
-    for token in regex.split(r"\s*[,/]\s*", day_part):
+    for token in day_list_split_comp.split(day_part):
         token = token.strip(" .:")
         if not token:
             continue
@@ -149,7 +156,7 @@ def _parse_days(day_part: str) -> list[DayRange]:
                 # (e.g. "Domingo a domingo"/"Sunday to Sunday") is an
                 # idiom for the full week, wrapping all the way around
                 return []
-            ranges.append(DayRange(start=start_code, end=end_code))
+            ranges.append(DayRange(start=Day(start_code), end=Day(end_code)))
         elif len(parts) == 1:
             code = day_expand.get(parts[0].upper())
             if code is None:
@@ -277,7 +284,9 @@ def _match_solar_time(token: str) -> str | None:
 
 
 def _parse_time_span(token: str) -> TimeSpan:
-    """Parse a single time range token, e.g. "8am-5pm", "08:00-12:00", or
+    """Parse a single time range token.
+
+    Parse a single time range token, e.g. "8am-5pm", "08:00-12:00", or
     "sunrise-sunset".
 
     Args:
@@ -340,7 +349,9 @@ def _parse_time_span(token: str) -> TimeSpan:
 
 
 def _merge_time_spans(spans: list[TimeSpan]) -> list[TimeSpan]:
-    """Merge adjacent time spans where one ends exactly when the next
+    """Merge adjacent time spans.
+
+    Merge adjacent time spans where one ends exactly when the next
     starts (e.g. "11:30-15:00,15:00-17:00" -> "11:30-17:00"), since such
     back-to-back windows represent one continuous open period.
 
@@ -371,12 +382,14 @@ def _parse_times(time_part: str) -> list[TimeSpan]:
     Returns:
         list[TimeSpan]: The parsed time spans.
     """
-    tokens = [t for t in regex.split(r"\s*,\s*", time_part.strip(" ,")) if t]
+    tokens = [t for t in comma_split_comp.split(time_part.strip(" ,")) if t]
     return _merge_time_spans([_parse_time_span(token) for token in tokens])
 
 
 def _parse_point_time(token: str) -> str:
-    """Parse a single point-in-time token into a 24-hour `HH:MM` string, or
+    """Parse time.
+
+    Parse a single point-in-time token into a 24-hour `HH:MM` string, or
     a solar keyword ("dawn", "dusk", "sunrise", "sunset").
 
     Unlike a time range, there's no second value to resolve an ambiguous
@@ -400,7 +413,9 @@ def _parse_point_time(token: str) -> str:
 
 
 def _parse_point_times(time_part: str) -> list[str]:
-    """Parse the "time" portion of a point-in-time rule segment into a
+    """Parse times.
+
+    Parse the "time" portion of a point-in-time rule segment into a
     sorted, de-duplicated list of "HH:MM" values.
 
     Args:
@@ -409,7 +424,7 @@ def _parse_point_times(time_part: str) -> list[str]:
     Returns:
         list[str]: The parsed, sorted point-in-time values.
     """
-    tokens = [t for t in regex.split(r"\s*,\s*", time_part.strip(" ,")) if t]
+    tokens = [t for t in comma_split_comp.split(time_part.strip(" ,")) if t]
     return sorted({_parse_point_time(token) for token in tokens})
 
 
@@ -438,7 +453,9 @@ def _split_comma_days(text: str) -> list[str]:
 
 
 def _split_space_days(text: str) -> list[str]:
-    """Split a top-level segment on whitespace that introduces a new day
+    """Split a top-level segment on whitespace that introduces a new day group.
+
+    Split a top-level segment on whitespace that introduces a new day
     group, when there's no punctuation separating adjacent rules at all
     (e.g. "Mo-Fr 08:00-21:00 Sa-Su 08:00-18:00").
 
@@ -483,7 +500,9 @@ def _has_day_info(segment: str) -> bool:
 
 
 def _merge_day_time_lines(segments: list[str]) -> list[str]:
-    """Merge consecutive top-level segments where days and times are split
+    """Merge consecutive top-level segments where days and times are split.
+
+    Merge consecutive top-level segments where days and times are split
     across separate lines (e.g. a day/day-range on its own line, followed by
     one or more lines with only the corresponding times -- as with a
     lunch/dinner split written on separate lines).
@@ -603,7 +622,9 @@ def _parse_segment(segment: str) -> RuleSet:
 
 
 def _merge_duplicate_day_rules(rules: list[RuleSet]) -> list[RuleSet]:
-    """Merge consecutive rules that apply to the exact same day(s) and are
+    """Merge consecutive same-day rules.
+
+    Merge consecutive rules that apply to the exact same day(s) and are
     both timed (e.g. two separately-written windows for the same days with
     no separator between them, like "Mo-Su 09:00-13:00 Mo-Su 16:30-20:30"),
     combining their time spans instead of letting the later one silently
@@ -701,16 +722,16 @@ def _collapse_days_to_ranges(days: set[str]) -> list[DayRange]:
                 run_prev_idx = day_idx
                 continue
             ranges.append(
-                DayRange(start=run_start)
+                DayRange(start=Day(run_start))
                 if run_start == run_prev
-                else DayRange(start=run_start, end=run_prev)
+                else DayRange(start=Day(run_start), end=Day(run_prev))
             )
             run_start = run_prev = day
             run_prev_idx = day_idx
         ranges.append(
-            DayRange(start=run_start)
+            DayRange(start=Day(run_start))
             if run_start == run_prev
-            else DayRange(start=run_start, end=run_prev)
+            else DayRange(start=Day(run_start), end=Day(run_prev))
         )
 
     if has_ph:
@@ -785,8 +806,9 @@ def _parse_point_segment(segment: str) -> PointRuleSet | None:
 
 
 def _merge_duplicate_point_day_rules(rules: list[PointRuleSet]) -> list[PointRuleSet]:
-    """Merge consecutive rules that apply to the exact same day(s),
-    combining their point times instead of letting the later one silently
+    """Merge consecutive rules that apply to the exact same day(s).
+
+    Combining their point times instead of letting the later one silently
     override the earlier one.
 
     Args:
@@ -874,11 +896,10 @@ def _validate_opening_hours_output(output: str) -> None:
 
         # If first part looks like days (contains weekday abbreviations or ranges),
         # there must be a second part with times/off/24h
-        if len(parts) >= 1 and _has_day_info(parts[0]):
-            if len(parts) < 2:
-                raise ValueError(
-                    f"Incomplete rule (days without times) in output: {rule!r}"
-                )
+        if len(parts) >= 1 and _has_day_info(parts[0]) and len(parts) < 2:
+            raise ValueError(
+                f"Incomplete rule (days without times) in output: {rule!r}"
+            )
 
 
 def _validate_point_times_output(output: str) -> None:
@@ -905,16 +926,14 @@ def _validate_point_times_output(output: str) -> None:
             raise ValueError(f"Malformed rule in output: {rule!r}")
 
         # If first part looks like days, there must be times
-        if len(parts) >= 1 and _has_day_info(parts[0]):
-            if len(parts) < 2:
-                raise ValueError(
-                    f"Incomplete rule (days without times) in output: {rule!r}"
-                )
+        if len(parts) >= 1 and _has_day_info(parts[0]) and len(parts) < 2:
+            raise ValueError(
+                f"Incomplete rule (days without times) in output: {rule!r}"
+            )
 
 
 def get_times(value: str) -> str:
-    """Process point-in-time strings (e.g. `collection_times`,
-    `service_times`) into the OSM format.
+    """Process point-in-time strings into the OSM format.
 
     ```python
     >>> get_times("Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00")

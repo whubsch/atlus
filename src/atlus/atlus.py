@@ -1,58 +1,56 @@
 """Functions and tools to process the raw address strings."""
 
-from collections import Counter
-
 import regex
-import usaddress
 from pydantic import ValidationError
 
 from .objects import Address
 from .resources import (
-    abbr_join_comp,
+    MAX_STATE_WORDS,
+    abbr_expansions,
+    abbr_join_comp,  # noqa: F401  re-exported to pair with `name_street_expand`
+    abbr_word_comp,
+    br_comp,
+    bracket_comp,
+    ca_post_comp,
+    cap_comp,
     dir_fill_comp,
     direction_expand,
+    direction_tokens,
     grid_comp,
+    hash_unit_comp,
+    housenumber_comp,
+    line_break_comp,
     name_expand,
+    occ_comp,
+    ord_comp,
     paren_comp,
+    period_comp,
     phone_comp,
+    po_box_comp,
     post_comp,
+    post_sep_comp,
     saint_comp,
+    separator_comp,
     sr_comp,
+    state_codes,
     state_expand,
     street_comp,
     street_expand,
+    street_suffixes,
+    unicode_comp,
+    us_post_comp,
     usa_comp,
 )
 
-toss_tags = [
-    "Recipient",
-    "IntersectionSeparator",
-    "LandmarkName",
-    "USPSBoxGroupID",
-    "USPSBoxGroupType",
-    "USPSBoxID",
-    "USPSBoxType",
-    "OccupancyType",
+ADDRESS_FIELDS = [
+    "addr:housenumber",
+    "addr:street",
+    "addr:unit",
+    "addr:city",
+    "addr:state",
+    "addr:postcode",
 ]
-"""Tags from the `usaddress` package to remove."""
-
-osm_mapping = {
-    "AddressNumber": "addr:housenumber",
-    "AddressNumberPrefix": "addr:housenumber",
-    "AddressNumberSuffix": "addr:housenumber",
-    "StreetName": "addr:street",
-    "StreetNamePreDirectional": "addr:street",
-    "StreetNamePreModifier": "addr:street",
-    "StreetNamePreType": "addr:street",
-    "StreetNamePostDirectional": "addr:street",
-    "StreetNamePostModifier": "addr:street",
-    "StreetNamePostType": "addr:street",
-    "OccupancyIdentifier": "addr:unit",
-    "PlaceName": "addr:city",
-    "StateName": "addr:state",
-    "ZipCode": "addr:postcode",
-}
-"""Mapping from `usaddress` fields to OSM tags."""
+"""The OSM address tags that `get_address` can return, in output order."""
 
 
 def get_title(value: str, single_word: bool = False) -> str:
@@ -65,6 +63,8 @@ def get_title(value: str, single_word: bool = False) -> str:
     "BOSTON"
     >>> get_title("BOSTON", single_word=True)
     "Boston"
+    >>> get_title("KING'S BEACH")
+    "King's Beach"
     ```
 
     Args:
@@ -75,7 +75,7 @@ def get_title(value: str, single_word: bool = False) -> str:
         str: Fixed string.
     """
     if (value.isupper() and " " in value) or (value.isupper() and single_word):
-        return mc_replace(value.title())
+        return mc_replace(" ".join(x.capitalize() for x in value.split()))
     return value
 
 
@@ -131,7 +131,7 @@ def ord_replace(value: str) -> str:
     Returns:
         str: Fixed string.
     """
-    return regex.sub(r"(\b\d+[SNRT][tTdDhH]\b)", lower_match, value)
+    return ord_comp.sub(lower_match, value)
 
 
 def name_street_expand(match: regex.Match) -> str:
@@ -147,6 +147,19 @@ def name_street_expand(match: regex.Match) -> str:
     if mat:
         return ({**name_expand, **street_expand})[mat].title()
     raise ValueError
+
+
+def _expand_word(match: regex.Match) -> str:
+    """Expand a matched word if it is a known abbreviation, else leave it alone.
+
+    Args:
+        match (regex.Match): Matched word.
+
+    Returns:
+        str: The expanded abbreviation, or the original text.
+    """
+    expanded = abbr_expansions.get(match.group(1).upper().rstrip("."))
+    return expanded if expanded else match.group(0)
 
 
 def direct_expand(match: regex.Match) -> str:
@@ -199,11 +212,13 @@ def abbrs(value: str) -> str:
     ```python
     >>> abbrs("St. Francis")
     "Saint Francis"
-    >>> abbrs("E St.")
-    "E Street"
-    >>> abbrs("E Sewell St")
-    "East Sewell Street"
+    >>> abbrs("E Sewell Rd")
+    "East Sewell Road"
     ```
+
+    Note that `St` is left alone here, since it is ambiguous between `Saint`
+    and `Street` outside a known saint name. `_process_street` resolves it
+    once the token's position in the address is known.
 
     Args:
         value (str): String to expand.
@@ -217,7 +232,7 @@ def abbrs(value: str) -> str:
     value = saint_comp.sub("Saint", value)
 
     # expand common street and word abbreviations
-    value = abbr_join_comp.sub(name_street_expand, value)
+    value = abbr_word_comp.sub(_expand_word, value)
 
     # expand directionals
     value = dir_fill_comp.sub(direct_expand, value)
@@ -226,10 +241,11 @@ def abbrs(value: str) -> str:
     value = us_replace(value)
 
     # uppercase shortened street descriptors
-    value = regex.sub(r"\b(C[rh]|S[rh]|[FR]m|Us)\b", cap_match, value)
+    value = cap_comp.sub(cap_match, value)
 
     # remove unremoved abbr periods
-    value = regex.sub(r"([a-zA-Z]{2,})\.", r"\1", value)
+    if "." in value:
+        value = period_comp.sub(r"\1", value)
 
     # expand 'SR' if no other street types
     value = sr_comp.sub("State Route", value)
@@ -245,8 +261,12 @@ def remove_br_unicode(old: str) -> str:
     Returns:
         str: Cleaned string.
     """
-    old = regex.sub(r"<br ?/>", ",", old)
-    return regex.sub(r"[^\x00-\x7F\n\r\t]", "", old)  # remove unicode
+    if "<br" in old:
+        old = br_comp.sub(",", old)
+    # the pattern only ever matches code points above 0x7F
+    if not old.isascii():
+        old = unicode_comp.sub("", old)
+    return old
 
 
 def clean_address(address_string: str) -> str:
@@ -258,11 +278,32 @@ def clean_address(address_string: str) -> str:
     Returns:
         str: Cleaned string.
     """
-    address_string = usa_comp.sub(
-        "", remove_br_unicode(address_string).replace("  ", " ").strip(" ,.")
-    )
-    address_string = paren_comp.sub("", address_string)
-    return grid_comp.sub(grid_match, address_string).strip(" ,.")
+    address_string = remove_br_unicode(address_string)
+
+    # treat line breaks as field separators
+    if "\n" in address_string or "\r" in address_string or "\t" in address_string:
+        address_string = line_break_comp.sub(", ", address_string)
+
+    # drop parenthetical asides, but keep bracketed content
+    if "(" in address_string:
+        address_string = paren_comp.sub("", address_string)
+    if "[" in address_string or "{" in address_string:
+        address_string = bracket_comp.sub(" ", address_string)
+
+    # collapse whitespace before matching country names
+    address_string = " ".join(address_string.split()).strip(" ,.")
+    if (
+        "US" in address_string
+        or "United" in address_string
+        or "Canada" in address_string
+    ):
+        address_string = usa_comp.sub("", address_string)
+
+    # normalize the separators left behind by the removals above
+    if "," in address_string:
+        address_string = separator_comp.sub(", ", address_string)
+    address_string = grid_comp.sub(grid_match, address_string)
+    return address_string.strip(" ,.;")
 
 
 def help_join(tags, keep: list[str]) -> str:
@@ -271,74 +312,187 @@ def help_join(tags, keep: list[str]) -> str:
     return " ".join(tag_join)
 
 
-def addr_street(tags: dict[str, str]) -> str:
-    """Build the street field."""
-    return help_join(
-        tags,
-        [
-            "StreetName",
-            "StreetNamePreDirectional",
-            "StreetNamePreModifier",
-            "StreetNamePreType",
-            "StreetNamePostDirectional",
-            "StreetNamePostModifier",
-            "StreetNamePostType",
-        ],
-    )
+def peel_postcode(address_string: str) -> tuple[list[str], str]:
+    """Peel every trailing postal code off the end of the string.
+
+    Repeatedly matches the tail so that a string carrying more than one
+    postcode reports all of them; the caller treats that as ambiguous.
+
+    ```python
+    >>> peel_postcode("345 Maple Rd, Countryside PA 24680-0198")
+    (["24680-0198"], "345 Maple Rd, Countryside PA")
+    ```
+
+    Args:
+        address_string (str): The string to peel from.
+
+    Returns:
+        tuple[list[str], str]: The postcodes found and the remaining string.
+    """
+    found: list[str] = []
+    rest = address_string
+
+    # the two formats are disjoint, so the cheaper and far more common US
+    # pattern is tried first
+    while rest:
+        match = us_post_comp.search(rest)
+        if match:
+            plus_four = match.group(2)
+            found.append(
+                f"{match.group(1)}-{plus_four}" if plus_four else match.group(1)
+            )
+            rest = rest[: match.start(1)].strip(" ,.")
+            continue
+
+        match = ca_post_comp.search(rest)
+        if match:
+            found.append(f"{match.group(1)} {match.group(2)}".upper())
+            rest = rest[: match.start(1)].strip(" ,.")
+            continue
+
+        break
+
+    return found, rest
 
 
-def addr_housenumber(tags: dict[str, str]) -> str:
-    """Build the housenumber field."""
-    return help_join(
-        tags, ["AddressNumberPrefix", "AddressNumber", "AddressNumberSuffix"]
-    )
+def peel_unit(address_string: str) -> tuple[list[str], str]:
+    """Remove every secondary-unit designator from the string.
+
+    ```python
+    >>> peel_unit("450 Sutter St Unit B, San Francisco")
+    (["B"], "450 Sutter St, San Francisco")
+    ```
+
+    Args:
+        address_string (str): The string to peel from.
+
+    Returns:
+        tuple[list[str], str]: The unit identifiers found and the remaining string.
+    """
+    found: list[str] = []
+
+    def _collect(match: regex.Match) -> str:
+        value = match.group(1)
+        if value:
+            found.append(value)
+        return "," if match.group(0).lstrip().startswith(",") else " "
+
+    rest = occ_comp.sub(_collect, address_string)
+    if "#" in rest:
+        rest = hash_unit_comp.sub(_collect, rest)
+    rest = " ".join(rest.split())
+    if "," in rest:
+        rest = separator_comp.sub(", ", rest)
+    return found, rest.strip(" ,.")
 
 
-def _combine_consecutive_tuples(
-    tuples_list: list[tuple[str, str]],
-) -> list[tuple[str, str]]:
-    """Join adjacent `usaddress` fields."""
-    combined_list = []
-    current_tag = None
-    current_value = None
+def peel_state(address_string: str) -> tuple[str | None, str]:
+    """Peel a trailing state or province off the end of the string.
 
-    for value, tag in tuples_list:
-        if tag != current_tag:
-            if current_tag:
-                combined_list.append((current_value, current_tag))
-            current_value, current_tag = value, tag
-        else:
-            current_value = " ".join(i for i in [current_value, value] if i)
+    A spelled-out name is only taken as a state when something else can still
+    serve as the city, so that `"200 Park Ave S, New York"` keeps `New York`
+    as the city rather than reading it as the state of the same name.
 
-    if current_tag:
-        combined_list.append((current_value, current_tag))
+    ```python
+    >>> peel_state("456 Elm Avenue, Portland Oregon")
+    ("OR", "456 Elm Avenue, Portland")
+    ```
 
-    return combined_list
+    Args:
+        address_string (str): The string to peel from.
+
+    Returns:
+        tuple[str | None, str]: The state code, if any, and the remaining string.
+    """
+    tokens = address_string.strip(" ,.").split()
+
+    for size in range(min(MAX_STATE_WORDS, len(tokens) - 1), 0, -1):
+        window = tokens[-size:]
+
+        # a comma inside the window means it straddles a field boundary
+        if any("," in token for token in window[:-1]):
+            continue
+
+        key = " ".join(window).replace(".", "").replace(",", "").upper()
+        code = state_expand.get(key) or (key if key in state_codes else None)
+        if not code:
+            continue
+
+        head = " ".join(tokens[:-size]).strip(" ,.")
+        if not head:
+            return None, address_string
+
+        # a spelled-out name ending a comma-free tail is more likely the city
+        if key not in state_codes and "," not in head:
+            return None, address_string
+
+        return code, head
+
+    return None, address_string
 
 
-def manual_join(parsed: list[tuple]) -> tuple[dict[str, str], list[str | None]]:
-    """Remove duplicates and join remaining fields."""
-    parsed_clean = [i for i in parsed if i[1] not in toss_tags]
-    counts = Counter([i[1] for i in parsed_clean])
-    ok_tags = [tag for tag, count in counts.items() if count == 1]
-    ok_dict: dict[str, str] = {i[1]: i[0] for i in parsed_clean if i[1] in ok_tags}
-    removed = [osm_mapping.get(field) for field, count in counts.items() if count > 1]
+def split_street_city(address_string: str) -> tuple[str, str | None]:
+    """Split the remaining string into its street and city parts.
 
-    new_dict: dict[str, str | None] = {}
-    if "addr:street" not in removed:
-        new_dict["addr:street"] = addr_street(ok_dict)
-    if "addr:housenumber" not in removed:
-        new_dict["addr:housenumber"] = addr_housenumber(ok_dict)
-    if "addr:unit" not in removed:
-        new_dict["addr:unit"] = ok_dict.get("OccupancyIdentifier")
-    if "addr:city" not in removed:
-        new_dict["addr:city"] = ok_dict.get("PlaceName")
-    if "addr:state" not in removed:
-        new_dict["addr:state"] = ok_dict.get("StateName")
-    if "addr:postcode" not in removed:
-        new_dict["addr:postcode"] = ok_dict.get("ZipCode")
+    Prefers the comma structure of the input. Without commas, falls back to
+    locating the last street suffix and treating whatever follows it (past any
+    trailing directional) as the city.
 
-    return {k: v for k, v in new_dict.items() if v}, removed
+    ```python
+    >>> split_street_city("999 River Road, Boulder")
+    ("999 River Road", "Boulder")
+    >>> split_street_city("555 South Michigan Avenue")
+    ("555 South Michigan Avenue", None)
+    ```
+
+    Args:
+        address_string (str): The string to split.
+
+    Returns:
+        tuple[str, str | None]: The street part and the city, if any.
+    """
+    parts = [part.strip() for part in address_string.split(",") if part.strip()]
+    if not parts:
+        return "", None
+    if len(parts) > 1:
+        return " ".join(parts[:-1]), parts[-1]
+
+    tokens = parts[0].split()
+    suffixes = [
+        index
+        for index, token in enumerate(tokens)
+        if token.upper().strip(".") in street_suffixes
+    ]
+    if not suffixes or suffixes[-1] >= len(tokens) - 1:
+        return parts[0], None
+
+    cut = suffixes[-1] + 1
+    if tokens[cut].upper().strip(".") in direction_tokens:
+        cut += 1
+    if cut >= len(tokens):
+        return parts[0], None
+
+    return " ".join(tokens[:cut]), " ".join(tokens[cut:])
+
+
+def peel_housenumber(street_string: str) -> tuple[str | None, str]:
+    """Peel a leading house number off the street part.
+
+    ```python
+    >>> peel_housenumber("1200-29 North Spring Street")
+    ("1200-29", "North Spring Street")
+    ```
+
+    Args:
+        street_string (str): The street part to peel from.
+
+    Returns:
+        tuple[str | None, str]: The house number, if any, and the street name.
+    """
+    match = housenumber_comp.match(street_string.strip())
+    if not match:
+        return None, street_string.strip()
+    return match.group(1), street_string.strip()[match.end() :].strip(" ,.")
 
 
 def collapse_list(seq: list) -> list:
@@ -396,7 +550,7 @@ def _process_housenumber(value: str) -> dict[str, str]:
 
 def _process_street(value: str) -> str:
     """Normalize street name."""
-    street = abbrs(value)
+    street = abbrs(get_title(value, single_word=True))
     return street_comp.sub("Street", street).strip(".")
 
 
@@ -427,7 +581,15 @@ def _process_unit(value: str) -> str:
 
 def _process_postcode(value: str) -> str:
     """Normalize postal code format."""
-    return post_comp.sub(r"\1", value).replace(" ", "-")
+    value = value.strip()
+
+    canadian = ca_post_comp.search(value)
+    if canadian:
+        return f"{canadian.group(1)} {canadian.group(2)}".upper()
+
+    # any separator between the ZIP and the +4 is normalized to a dash
+    value = post_sep_comp.sub("-", value)
+    return post_comp.sub(r"\1", value)
 
 
 def _apply_field_processors(cleaned: dict[str, str]) -> dict[str, str]:
@@ -456,19 +618,53 @@ def _apply_field_processors(cleaned: dict[str, str]) -> dict[str, str]:
 
 
 def _parse_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
-    """Parse address string and handle errors."""
-    try:
-        cleaned = usaddress.tag(clean_address(address_string), tag_mapping=osm_mapping)[
-            0
-        ]
-        removed = []
-    except usaddress.RepeatedLabelError as err:  # type: ignore[attr-defined]
-        collapsed = collapse_list(
-            [(i[0].strip(" .,#"), i[1]) for i in err.parsed_string]
-        )
-        cleaned, removed = manual_join(_combine_consecutive_tuples(collapsed))
+    """Segment an address string into OSM fields.
 
-    return cleaned, removed
+    Works right to left, peeling the fields whose position is most reliable
+    first, so that each anchor shrinks the string the next one searches. A
+    field matched more than once is ambiguous: it is dropped and reported.
+
+    Args:
+        address_string (str): The address string to segment.
+
+    Returns:
+        tuple[dict[str, str], list[str | None]]:
+        The raw segments and the fields removed as ambiguous.
+    """
+    rest = clean_address(address_string)
+    if "box" in rest.lower():
+        rest = " ".join(po_box_comp.sub(" ", rest).strip(" ,.").split())
+
+    parsed: dict[str, str] = {}
+    removed: list[str | None] = []
+
+    postcodes, rest = peel_postcode(rest)
+    if len(postcodes) > 1:
+        removed.append("addr:postcode")
+    elif postcodes:
+        parsed["addr:postcode"] = postcodes[0]
+
+    units, rest = peel_unit(rest)
+    if len(units) > 1:
+        removed.append("addr:unit")
+    elif units:
+        parsed["addr:unit"] = units[0]
+
+    state, rest = peel_state(rest)
+    if state:
+        parsed["addr:state"] = state
+
+    street, city = split_street_city(rest)
+    housenumber, street = peel_housenumber(street)
+
+    if housenumber:
+        parsed["addr:housenumber"] = housenumber
+    if street:
+        parsed["addr:street"] = street
+    if city:
+        parsed["addr:city"] = city
+
+    return {key: parsed[key] for key in ADDRESS_FIELDS if key in parsed}, removed
 
 
 def _validate_and_clean(
@@ -511,15 +707,17 @@ def get_address(address_string: str) -> tuple[dict[str, str], list[str | None]]:
         tuple[dict[str, str], list[str | None]]:
         The processed address string and the removed fields.
     """
-    # Parse the address string
-    cleaned, removed = _parse_address(address_string)
+    if not address_string.strip().replace("\n", ""):
+        raise ValueError("Address string cannot be empty")
 
-    # Remove unwanted tags
-    for toss in toss_tags:
-        cleaned.pop(toss, None)
+    # Segment the address string into fields
+    cleaned, removed = _parse_address(address_string)
 
     # Apply field-specific processors
     cleaned = _apply_field_processors(cleaned)
+
+    # Drop fields that were parsed but came out empty
+    cleaned = {key: value for key, value in cleaned.items() if value}
 
     # Validate and return
     return _validate_and_clean(cleaned, removed)
