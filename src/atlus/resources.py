@@ -489,6 +489,30 @@ abbr_join_comp = regex.compile(
     rf"(\b(?:{ABBR_JOIN})\b\.?)(?!')", flags=regex.IGNORECASE
 )
 
+abbr_expansions = {
+    key: value.title() for key, value in {**name_expand, **street_expand}.items()
+}
+"""Street and name abbreviations mapped straight to their expanded form."""
+
+ABBR_MIN = min(len(key) for key in abbr_expansions)
+ABBR_MAX = max(len(key) for key in abbr_expansions)
+abbr_word_comp = regex.compile(rf"(\b[A-Za-z]{{{ABBR_MIN},{ABBR_MAX}}}\b\.?)(?!')")
+"""Match any word that could be an abbreviation, for lookup in `abbr_expansions`.
+
+Scanning for one generic word shape and rejecting misses with a dict lookup is
+substantially faster than a single alternation of every known abbreviation, and
+matches the same spans.
+"""
+
+ord_comp = regex.compile(r"(\b\d+[SNRT][tTdDhH]\b)")
+"""Match an improperly capitalized ordinal, such as `3Rd`."""
+
+cap_comp = regex.compile(r"\b(C[rh]|S[rh]|[FR]m|Us)\b")
+"""Match shortened street descriptors that should be upper-cased."""
+
+period_comp = regex.compile(r"([a-zA-Z]{2,})\.")
+"""Match a trailing period left on an abbreviation."""
+
 DIR_FILL = "|".join(r"\.?".join(list(abbr)) for abbr in direction_expand)
 st_ave = r" (?:Street|Avenue)"
 dir_fill_comp = regex.compile(
@@ -508,9 +532,121 @@ street_comp = regex.compile(
 
 post_comp = regex.compile(r"(\d{5})-?0{4}")
 
+post_sep_comp = regex.compile(r"(?<=\d)[\s+.\-]+(?=\d)")
+"""Match the separator between a ZIP and its +4, however it was written."""
+
 usa_comp = regex.compile(r",? (?:USA?|United States(?: of America)?|Canada)\b")
 
 paren_comp = regex.compile(r" ?\(.*\)")
+
+occupancy_types = [
+    "APARTMENT",
+    "APT",
+    "BASEMENT",
+    "BLDG",
+    "BSMT",
+    "BUILDING",
+    "DEPARTMENT",
+    "DEPT",
+    "FL",
+    "FLOOR",
+    "FRNT",
+    "HANGAR",
+    "HNGR",
+    "LBBY",
+    "LOBBY",
+    "LOT",
+    "LOWER",
+    "LOWR",
+    "OFC",
+    "OFFICE",
+    "PENTHOUSE",
+    "PH",
+    "PIER",
+    "PMB",
+    "REAR",
+    "RM",
+    "ROOM",
+    "SIDE",
+    "SLIP",
+    "SPACE",
+    "SPC",
+    "STE",
+    "STOP",
+    "SUITE",
+    "TRAILER",
+    "TRLR",
+    "UNIT",
+    "UPPER",
+    "UPPR",
+]
+"""USPS Publication 28 secondary-unit designators."""
+
+# --- parser anchors, applied right-to-left ---
+
+OCC_ALT = "|".join(sorted(occupancy_types, key=len, reverse=True))
+occ_comp = regex.compile(
+    rf"[,;]?\s*\b(?:{OCC_ALT})\b\.?\s*#?\s*([A-Za-z0-9][A-Za-z0-9\-]*)?",
+    flags=regex.IGNORECASE,
+)
+"""Match a secondary-unit designator and its identifier."""
+
+hash_unit_comp = regex.compile(r"[,;]?\s*#\s*([A-Za-z0-9][A-Za-z0-9\-]*)")
+"""Match a bare `#` unit, e.g. `# 4B`."""
+
+us_post_comp = regex.compile(r"(?:^|[,\s])(\d{5})(?:[-+.\s](\d{4}))?[,.\s]*$")
+"""Match a US ZIP or ZIP+4 at the end of a string."""
+
+ca_post_comp = regex.compile(
+    r"(?:^|[,\s])([A-Za-z]\d[A-Za-z])[\s-]?(\d[A-Za-z]\d)[,.\s]*$"
+)
+"""Match a Canadian postal code at the end of a string."""
+
+housenumber_comp = regex.compile(
+    r"^(\d+(?:[-/]\d+)?[A-Za-z]?|[NnSs]\d+[EeWw]\d+|[EeWw]\d+[NnSs]\d+)(?=\s|$)"
+)
+"""Match a leading house number, including ranges and grid-style numbers."""
+
+po_box_comp = regex.compile(
+    r"[,;]?\s*\b(?:P\.?\s?O\.?\s?Box|Post\s?Office\s?Box|Box)\s+[A-Za-z0-9\-]+",
+    flags=regex.IGNORECASE,
+)
+"""Match a PO box, which has no OSM address equivalent."""
+
+bracket_comp = regex.compile(r"[\[\]{}]")
+"""Match bracket characters, whose contents are kept."""
+
+street_suffixes = (
+    set(street_expand)
+    | {value for value in street_expand.values()}
+    # `St`/`Street` is disambiguated separately by `street_comp`, so it is
+    # absent from `street_expand`, but it is still a street suffix
+    | {"ST", "STREET"}
+)
+"""Every street suffix, abbreviated and expanded, upper-cased."""
+
+direction_tokens = set(direction_expand) | {
+    value.upper() for value in direction_expand.values()
+}
+"""Every compass directional, abbreviated and expanded, upper-cased."""
+
+state_codes = set(state_expand.values())
+"""Valid two-letter state and province codes."""
+
+MAX_STATE_WORDS = max(len(name.split()) for name in state_expand)
+"""Longest spelled-out state or province name, in words."""
+
+line_break_comp = regex.compile(r"[\n\r\t]+")
+"""Match line breaks, which act as field separators."""
+
+br_comp = regex.compile(r"<br ?/>")
+"""Match an HTML line break, which acts as a field separator."""
+
+unicode_comp = regex.compile(r"[^\x00-\x7F\n\r\t]")
+"""Match any non-ASCII character."""
+
+separator_comp = regex.compile(r"\s*,(?:\s*,)*\s*")
+"""Match a run of commas and the whitespace around them."""
 
 # match Wisconsin grid-style addresses: N65w25055, W249 N6620, etc.
 grid_comp = regex.compile(
@@ -742,3 +878,21 @@ time_range_split_comp = regex.compile(
     r"\s*(?:-{1,2}|to|through|thru|\ba\b(?!\.?m\.?\b)|\u2013|\u2014|\u2015)\s*",
     flags=regex.IGNORECASE,
 )
+
+spanish_y_comp = regex.compile(r"\by\b", flags=regex.IGNORECASE)
+"""Match the Spanish conjunction `y` (and), which acts as a list separator."""
+
+spanish_de_comp = regex.compile(r"\bde\b", flags=regex.IGNORECASE)
+"""Match the Spanish preposition `de` (of/from), which carries no information."""
+
+horizontal_ws_comp = regex.compile(r"[ \t]+")
+"""Match runs of horizontal whitespace only; newlines separate rules."""
+
+letter_period_comp = regex.compile(r"[a-z]\.$", flags=regex.IGNORECASE)
+"""Match a trailing period that belongs to an `a.m.`/`p.m.` abbreviation."""
+
+day_list_split_comp = regex.compile(r"\s*[,/]\s*")
+"""Split a day list on commas or slashes, which both act as separators."""
+
+comma_split_comp = regex.compile(r"\s*,\s*")
+"""Split a time list on commas."""

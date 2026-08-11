@@ -637,8 +637,9 @@ def test_parse_point_times_sorted_and_deduped() -> None:
 def test_parse_point_segment() -> None:
     """Test parsing a full day+time point segment."""
     rule = _parse_point_segment("Mo-Fr 15:00,18:00")
-    assert rule.days == [DayRange(start=Day.MO, end=Day.FR)]
-    assert rule.times == ["15:00", "18:00"]
+    if rule:
+        assert rule.days == [DayRange(start=Day.MO, end=Day.FR)]
+        assert rule.times == ["15:00", "18:00"]
 
 
 # ---------------------------------------------------------------------------

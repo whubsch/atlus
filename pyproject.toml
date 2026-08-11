@@ -24,10 +24,10 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Typing :: Typed",
 ]
-dependencies = ["usaddress>=0.5.15", "regex>=2024.11.6"]
+dependencies = ["regex>=2024.11.6", "pydantic>=2.0.0"]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0.0", "pydantic>=2.0.0"]
+test = ["pytest>=7.0.0"]
 
 [project.urls]
 Documentation = "https://whubsch.github.io/atlus/index.html"

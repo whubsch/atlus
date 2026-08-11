@@ -42,17 +42,19 @@ class Address(BaseModel):
     )
     addr_postcode: str | None = Field(
         alias="addr:postcode",
-        pattern=r"^\d{5}(?:\-\d{4})?$",
-        description="The postal code of the address.",
-        examples=["90012", "90012-4801"],
+        pattern=r"^(?:\d{5}(?:\-\d{4})?|[A-Z]\d[A-Z] \d[A-Z]\d)$",
+        description="The postal code of the address. US ZIP and ZIP+4 codes"
+        " use `12345` and `12345-6789`; Canadian postal codes use the"
+        " standard `A1A 1A1` form.",
+        examples=["90012", "90012-4801", "K1A 0B1"],
         default=None,
     )
 
 
 class Day(str, Enum):
-    """Two-letter OSM day abbreviations, in canonical week order, plus the
-    special `PH` (public holiday) indicator.
+    """Two-letter OSM day abbreviations.
 
+    In canonical week order, plus the special `PH` (public holiday) indicator.
     `PH` isn't a real weekday -- it's never part of a day range, always
     stands alone, and always sorts after every other day.
     """
@@ -206,8 +208,9 @@ class PointRuleSet(BaseModel):
     @field_validator("times")
     @classmethod
     def _check_time_format(cls, value: list[str]) -> list[str]:
-        """Ensure every time value is a valid 24-hour `HH:MM` string, or one
-        of the solar keywords `dawn`, `dusk`, `sunrise`, `sunset`.
+        """Ensure every time value is a valid 24-hour `HH:MM` string.
+
+        Or one of the solar keywords `dawn`, `dusk`, `sunrise`, `sunset`.
         """
         pattern = regex.compile(
             r"^(?:([01]\d|2[0-4]):[0-5]\d|dawn|dusk|sunrise|sunset)$"
@@ -234,8 +237,9 @@ class PointRuleSet(BaseModel):
 
 
 class PointTimes(BaseModel):
-    """A full point-in-time value (e.g. `collection_times`) made of one or
-    more rules.
+    """A full point-in-time value (e.g. `collection_times`).
+
+    Made of one or more rules.
     """
 
     rules: list[PointRuleSet] = Field(
