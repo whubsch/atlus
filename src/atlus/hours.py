@@ -253,6 +253,95 @@ def _resolve_pair(
     return f"{sh:02d}:{sm:02d}", f"{eh:02d}:{em:02d}"
 
 
+def _resolve_pair_no_wrap(
+    start: tuple[int, int, bool],
+    end: tuple[int, int, bool],
+    start_explicit: bool,
+    end_explicit: bool,
+) -> tuple[str, str]:
+    """Resolve a pair of times like `_resolve_pair`.
+
+    Never assume an ambiguous bare-digit or bare-colon span crosses
+    midnight.
+
+    "Explicit" here means the raw token carried an actual am/pm marker.
+    A colon on its own (e.g. the "9:00" in "9:00-5:00") does *not* count
+    as explicit -- it only fixes the minutes, not whether the hour is
+    meant as a 12-hour or 24-hour value, so "9:00" is exactly as
+    ambiguous as the bare "9" in "9-5". This matters because
+    `_parse_single_time` treats any colon form as already resolved (its
+    third tuple element is `True`), which is the right call for
+    `_resolve_pair`'s default behavior, but would defeat the purpose of
+    `no_wrap` if trusted here -- it's exactly the case that used to make
+    "9:00-5:00" silently resolve to "09:00-05:00" (open until 5 AM)
+    instead of the intended "09:00-17:00".
+
+    A bare digit above 12 (e.g. the "13" in "13-2") is likewise not
+    "explicit" by this definition, even though `_parse_single_time` also
+    marks it as resolved on its own (there's no 12-hour reading of it).
+    That case is handled by the magnitude check below instead.
+
+    Resolution rules, most to least specific:
+
+    - Both sides explicit (real am/pm markers): used as parsed, no
+      adjustment. Can still cross midnight (e.g. "10pm-2am"), since
+      that's an intentional signal, not a guess.
+    - One side explicit, the other ambiguous (bare digit or bare colon):
+      the ambiguous side is resolved to whichever meridiem keeps it on
+      the correct side of the explicit time (matching `_resolve_pair`'s
+      behavior).
+    - Neither side explicit (e.g. "9-5" or "9:00-5:00" or "13-2"):
+        - If the start hour is already > 12 (e.g. the "13" in "13-2"),
+          there's no 12-hour reading of it, so both hours are taken at
+          face value with no adjustment.
+        - Otherwise the start hour is assumed to be AM, and the end hour
+          is shifted to PM (by adding 12) only if it's numerically <= the
+          start hour -- just enough to keep the span from running
+          backwards on the same day ("9-5"/"9:00-5:00" becomes
+          "09:00-17:00", but "9-14" stays "09:00-14:00" since 14 is
+          already later than 9).
+
+    Note:
+        This function only decides how to interpret an ambiguous hour --
+        it doesn't override the separate, pre-existing sanity check in
+        `_parse_time_span` that rejects a result which still ends up
+        looking backwards (end < start) once the end hour is too late in
+        the day to be a plausible overnight closing time (see
+        `EARLY_MORNING_CUTOFF_HOUR`). So `no_wrap` prevents *guessing*
+        an overnight span, but a genuinely nonsensical one (e.g. bare
+        "16-14", which resolves to "16:00-14:00") is still caught and
+        raises `ValueError`, exactly as it would without `no_wrap`.
+
+    Args:
+        start (tuple[int, int, bool]): The start hour, minute, and resolved
+            flag, as returned by `_parse_single_time`.
+        end (tuple[int, int, bool]): The end hour, minute, and resolved
+            flag, as returned by `_parse_single_time`.
+        start_explicit (bool): Whether the start token had an explicit
+            am/pm marker (a colon alone doesn't count).
+        end_explicit (bool): Whether the end token had an explicit am/pm
+            marker (a colon alone doesn't count).
+
+    Returns:
+        tuple[str, str]: The resolved "HH:MM" start and end strings.
+    """
+    sh, sm, _ = start
+    eh, em, _ = end
+
+    if start_explicit and not end_explicit:
+        candidate_pm = eh if eh == 12 else eh + 12
+        candidate_am = 0 if eh == 12 else eh
+        eh = candidate_pm if candidate_pm > sh else candidate_am
+    elif end_explicit and not start_explicit:
+        candidate_pm = sh if sh == 12 else sh + 12
+        candidate_am = 0 if sh == 12 else sh
+        sh = candidate_pm if candidate_pm < eh else candidate_am
+    elif not start_explicit and not end_explicit and sh <= 12 and eh <= sh:
+        eh += 12
+
+    return f"{sh:02d}:{sm:02d}", f"{eh:02d}:{em:02d}"
+
+
 def _meridiem_letter(token: str) -> str | None:
     """Extract the explicit am/pm marker (if any) from a time token.
 
@@ -283,7 +372,7 @@ def _match_solar_time(token: str) -> str | None:
     return token if solar_time_comp.match(token) else None
 
 
-def _parse_time_span(token: str) -> TimeSpan:
+def _parse_time_span(token: str, no_wrap: bool = False) -> TimeSpan:
     """Parse a single time range token.
 
     Parse a single time range token, e.g. "8am-5pm", "08:00-12:00", or
@@ -291,6 +380,24 @@ def _parse_time_span(token: str) -> TimeSpan:
 
     Args:
         token (str): The time range token.
+        no_wrap (bool): If True, ambiguous times (a bare digit like the "9"
+            in "9-5", or a bare colon form like the "9:00" in "9:00-5:00",
+            with no am/pm marker either way) never wrap into an assumed
+            overnight span. See `_resolve_pair_no_wrap` for the exact
+            resolution rule this applies. A colon alone does *not* make a
+            time unambiguous here -- only an actual am/pm marker (or an
+            hour already above 12) does, so "9:00-5:00" is affected by
+            `no_wrap` exactly like "9-5" is. Times with a real am/pm
+            marker (e.g. "9am-5pm") are unaffected and always resolved the
+            same way regardless of `no_wrap`.
+
+            Note that `no_wrap` only changes how an *ambiguous* hour is
+            interpreted -- it doesn't disable the separate, pre-existing
+            check below that rejects a result which still looks backwards
+            (end < start) once the end hour is too late to plausibly be an
+            overnight close (see `EARLY_MORNING_CUTOFF_HOUR`). So e.g. a
+            bare "16-14" still raises `ValueError` with `no_wrap=True`,
+            the same as it does without it.
 
     Returns:
         TimeSpan: The parsed time span.
@@ -320,7 +427,22 @@ def _parse_time_span(token: str) -> TimeSpan:
 
     start = _parse_single_time(parts[0])
     end = _parse_single_time(parts[1])
-    start_str, end_str = _resolve_pair(start, end)
+    if no_wrap:
+        # a colon alone (e.g. the "9:00" in "9:00-5:00") does NOT make a
+        # time unambiguous -- it's just as likely to be a 12-hour value
+        # written with a leading zero/colon as it is to be genuine 24-hour
+        # style, so only an actual am/pm marker counts as "explicit" here.
+        # A bare hour above 12 (e.g. "13") is still handled correctly even
+        # though it's not "explicit" by this definition, since neither side
+        # counting as explicit falls through to `_resolve_pair_no_wrap`'s
+        # own magnitude check.
+        start_explicit = _meridiem_letter(parts[0]) is not None
+        end_explicit = _meridiem_letter(parts[1]) is not None
+        start_str, end_str = _resolve_pair_no_wrap(
+            start, end, start_explicit, end_explicit
+        )
+    else:
+        start_str, end_str = _resolve_pair(start, end)
 
     # a colon-form start time with no explicit am/pm marker (e.g. the "4:30"
     # in "4:30-8:30p") is normally assumed to already be in 24-hour form,
@@ -373,17 +495,22 @@ def _merge_time_spans(spans: list[TimeSpan]) -> list[TimeSpan]:
     return merged
 
 
-def _parse_times(time_part: str) -> list[TimeSpan]:
+def _parse_times(time_part: str, no_wrap: bool = False) -> list[TimeSpan]:
     """Parse the "time" portion of a rule segment into a list of TimeSpan.
 
     Args:
         time_part (str): The substring believed to contain time information.
+        no_wrap (bool): If True, ambiguous times (no am/pm marker, whether
+            a bare digit or a bare colon form) never wrap into an assumed
+            overnight span. See `_resolve_pair_no_wrap` for details.
 
     Returns:
         list[TimeSpan]: The parsed time spans.
     """
     tokens = [t for t in comma_split_comp.split(time_part.strip(" ,")) if t]
-    return _merge_time_spans([_parse_time_span(token) for token in tokens])
+    return _merge_time_spans(
+        [_parse_time_span(token, no_wrap=no_wrap) for token in tokens]
+    )
 
 
 def _parse_point_time(token: str) -> str:
@@ -600,11 +727,14 @@ def _split_day_time(segment: str) -> tuple[str, str]:
     return segment[: match.start()].strip(), segment[match.start() :].strip()
 
 
-def _parse_segment(segment: str) -> RuleSet:
+def _parse_segment(segment: str, no_wrap: bool = False) -> RuleSet:
     """Parse a single rule segment into a RuleSet.
 
     Args:
         segment (str): A single rule segment (days plus times/status).
+        no_wrap (bool): If True, ambiguous times (no am/pm marker, whether
+            a bare digit or a bare colon form) never wrap into an assumed
+            overnight span. See `_resolve_pair_no_wrap` for details.
 
     Returns:
         RuleSet: The parsed rule.
@@ -617,7 +747,7 @@ def _parse_segment(segment: str) -> RuleSet:
     if day_24_comp.search(time_part):
         return RuleSet(days=days, is_24h=True)
 
-    times = _parse_times(time_part)
+    times = _parse_times(time_part, no_wrap=no_wrap)
     return RuleSet(days=days, times=times)
 
 
@@ -995,7 +1125,7 @@ def get_times(value: str) -> str:
     return output
 
 
-def get_hours(value: str) -> str:
+def get_hours(value: str, no_wrap: bool = False) -> str:
     """Process opening hours strings into the OSM `opening_hours` format.
 
     ```python
@@ -1009,6 +1139,19 @@ def get_hours(value: str) -> str:
     "Mo-Fr 09:00-17:00; PH off"
     >>> get_hours("Mo-Fr sunrise-sunset")
     "Mo-Fr sunrise-sunset"
+    >>> get_hours("Mo-Fr 9:00-5:00")
+    "Mo-Fr 09:00-05:00"
+    >>> get_hours("Mo-Fr 9:00-5:00", no_wrap=True)
+    "Mo-Fr 09:00-17:00"
+    >>> get_hours("Mo-Fr 13-2", no_wrap=True)
+    "Mo-Fr 13:00-02:00"
+    >>> get_hours("Mo-Fr 9-2", no_wrap=True)
+    "Mo-Fr 09:00-14:00"
+    >>> get_hours("Mo-Fr 16-14", no_wrap=True)
+    Traceback (most recent call last):
+        ...
+    ValueError: Invalid time range: '16-14' ends before it starts, and isn't
+    a plausible overnight closing time
     ```
 
     The solar keywords `dawn`, `dusk`, `sunrise`, and `sunset` are accepted
@@ -1044,13 +1187,59 @@ def get_hours(value: str) -> str:
         - Days that are not mentioned anywhere in the input string are
           simply omitted from the output; they are not assumed to be
           `off`.
-        - Bare, ambiguous times with no am/pm marker or colon (e.g. "9-5")
-          are assumed to be typical AM-to-PM business hours, so "9-5"
-          resolves to "09:00-17:00" rather than being rejected or resolved
-          another way.
+        - Bare, ambiguous times with no am/pm marker (e.g. "9-5") are, by
+          default (`no_wrap=False`), assumed to be typical AM-to-PM
+          business hours, so "9-5" resolves to "09:00-17:00" rather than
+          being rejected or resolved another way.
+        - A colon on its own does *not* make a time unambiguous -- it only
+          fixes the minutes, not whether the hour means AM or PM. By
+          default, a colon form with no am/pm marker (e.g. the "5:00" in
+          "9:00-5:00") is instead assumed to already be correct 24-hour
+          time, taken completely at face value. This is a common source of
+          surprise: "Mo-Fr 9:00-5:00" resolves to "Mo-Fr 09:00-05:00" (open
+          until 5 AM, not 5 PM) rather than the probably-intended
+          "09:00-17:00". Use `no_wrap=True` to avoid this by resolving
+          such times the same way bare digits are.
 
     Args:
         value (str): The opening hours string to process.
+        no_wrap (bool): If True, disables the "assume overnight" behavior
+            for ambiguous times -- a bare digit (e.g. the "9" or "5" in
+            "9-5") or a bare colon form (e.g. the "9:00" or "5:00" in
+            "9:00-5:00") with no am/pm marker either way. Instead of ever
+            wrapping such a span past midnight, each side is resolved so
+            the times stay on the same day whenever that's possible:
+
+            - If the start hour is already > 12 (e.g. the "13" in "13-2"),
+              there's no 12-hour reading of it, so neither side is
+              adjusted and the span is taken at face value ("13:00-02:00"
+              -- this is still an overnight span, but an intentional one,
+              since the start hour couldn't have meant anything else).
+            - Otherwise the start hour is assumed to be AM, and the end
+              hour is only shifted to PM (by adding 12) when it's
+              numerically less than or equal to the start hour -- just
+              enough to keep the span from running backwards on the same
+              day. So "9-5"/"9:00-5:00" becomes "09:00-17:00" (5 <= 9,
+              shifted to PM), "9-14" stays "09:00-14:00" (14 is already
+              later than 9, no shift needed), and "9-2" becomes
+              "09:00-14:00" (2 <= 9, shifted to PM -- *not* "09:00-02:00",
+              since nothing here signals an overnight span was intended).
+
+            This only affects ambiguous times. A real am/pm marker (e.g.
+            "9am-5pm" or "10pm-2am") always resolves the same way whether
+            or not `no_wrap` is set, and can still cross midnight when both
+            sides are explicit, since that's an intentional signal rather
+            than a guess.
+
+            `no_wrap` doesn't disable the separate, pre-existing check
+            that rejects a span which still ends up looking backwards
+            (end < start) once the end hour is too late in the day to be a
+            plausible overnight close -- currently 6 AM or later (see
+            `EARLY_MORNING_CUTOFF_HOUR`). So a bare "16-14" still raises
+            `ValueError` with `no_wrap=True`, just as it does without it;
+            `no_wrap` changes how an ambiguous hour is *interpreted*, not
+            whether an implausible result is still caught. Defaults to
+            False.
 
     Returns:
         str: The formatted opening hours string.
@@ -1074,7 +1263,7 @@ def get_hours(value: str) -> str:
     top_segments = _merge_day_time_lines(top_segments)
     segments = [sub for top in top_segments for sub in _split_space_days(top)]
     segments = [sub for seg in segments for sub in _split_comma_days(seg)]
-    rules = [_parse_segment(segment) for segment in segments]
+    rules = [_parse_segment(segment, no_wrap=no_wrap) for segment in segments]
     rules = _merge_duplicate_day_rules(rules)
 
     # only coalesce/reorder when every rule specifies explicit days -- if any

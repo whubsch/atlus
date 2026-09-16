@@ -26,6 +26,7 @@ This Python project translates raw address, phone number, and opening hours stri
 - Parse raw opening hours strings into the OSM `opening_hours` format, including the special `PH` (public holiday) indicator and the `dawn`/`dusk`/`sunrise`/`sunset` solar time keywords.
 - Parse raw point-in-time strings (e.g. `collection_times`, `service_times`) into the matching OSM format, dropping any "closed" days rather than erroring (since point-in-time tags have no "closed" concept of their own).
 - Raise a clear error instead of guessing when opening hours/point-in-time input references calendar/date-based rules (month names, specific dates, named holidays, or OSM's `Th[4]`-style nth-weekday notation), which aren't supported.
+- Optional `no_wrap` mode for `get_hours()` that stops ambiguous times without an am/pm marker -- whether a bare digit (e.g. "9-5") or a bare colon form (e.g. "9:00-5:00") -- from ever being assumed to cross midnight.
 
 ## Usage
 
@@ -49,7 +50,17 @@ pip install atlus
 "Mo-Fr 15:00,18:00,19:00,23:00; Sa 15:00; Su 10:30,23:00"
 >>> atlus.get_hours("Mo-Fr sunrise-sunset")
 "Mo-Fr sunrise-sunset"
+>>> atlus.get_hours("Monday to Friday 9:00-5:00")
+"Mo-Fr 09:00-05:00"
+>>> atlus.get_hours("Monday to Friday 9:00-5:00", no_wrap=True)
+"Mo-Fr 09:00-17:00"
+>>> atlus.get_hours("Mo-Fr 13-2", no_wrap=True)
+"Mo-Fr 13:00-02:00"
 ```
+
+A colon on its own doesn't make a time unambiguous -- only an actual am/pm marker does. By default, `get_hours()` assumes a bare colon time with no am/pm marker (e.g. the "5:00" above) is already correct 24-hour time, which is why `"9:00-5:00"` resolves to `"09:00-05:00"` (open until 5 AM) rather than the probably-intended `"09:00-17:00"`. Pass `no_wrap=True` to instead resolve such ambiguous times the same way bare digits like `"9-5"` already are.
+
+`no_wrap` only changes how an _ambiguous_ time is interpreted -- it doesn't disable the pre-existing check that rejects a span which still looks backwards (end before start) once the end hour is too late in the day (6 AM or later) to be a plausible overnight close, so a nonsensical input like `"16-14"` still raises `ValueError` either way.
 
 ## Changes
 

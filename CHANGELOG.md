@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-16
+
+### Added
+
+- **`no_wrap` parameter for `get_hours()`**: When `True`, ambiguous times --
+  a bare digit (e.g. "9-5") or a bare colon form with no am/pm marker (e.g.
+  "9:00-5:00") -- never assume an overnight wrap:
+  - A colon alone does _not_ make a time unambiguous. Without `no_wrap`,
+    "Mo-Fr 9:00-5:00" silently resolves to "Mo-Fr 09:00-05:00" (open until
+    5 AM), since a bare colon time is otherwise assumed to already be
+    correct 24-hour time. `no_wrap` fixes this specific case by resolving
+    it as "09:00-17:00" instead, the same as "9-5" already was.
+  - If the start hour is already > 12 (e.g. the "13" in "13-2"), there's no
+    12-hour reading of it, so both hours are taken at face value
+    ("13:00-02:00").
+  - Otherwise the start hour is assumed to be AM, and the end hour is only
+    shifted to PM when it's numerically <= the start hour -- just enough to
+    keep the span from running backwards on the same day ("9-5"/"9:00-5:00"
+    become "09:00-17:00", but "9-14" stays "09:00-14:00").
+  - Times with a real am/pm marker (e.g. "9am-5pm" or "10pm-2am") are
+    unaffected.
+  - Does not disable the pre-existing check that rejects a span which still
+    looks backwards once the end hour is too late in the day (6 AM or
+    later) to be a plausible overnight close, so a nonsensical bare
+    "16-14" still raises `ValueError` with or without `no_wrap`.
+  - Defaults to `False`, preserving existing behavior.
+
 ## [1.2.0] - 2026-08-11
 
 ### Changed
@@ -110,5 +137,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated GitHub Action versions for security and stability
 
+[1.3.0]: https://github.com/whubsch/atlus/compare/1.2.0...1.3.0
 [1.2.0]: https://github.com/whubsch/atlus/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/whubsch/atlus/compare/1.0.1...1.1.0

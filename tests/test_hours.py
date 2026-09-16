@@ -16,6 +16,7 @@ from src.atlus.hours import (
     _parse_time_span,
     _parse_times,
     _resolve_pair,
+    _resolve_pair_no_wrap,
     _split_day_time,
     get_hours,
     get_times,
@@ -280,6 +281,54 @@ def test_resolve_pair_end_resolved_start_ambiguous() -> None:
 
 
 @pytest.mark.parametrize(
+    ("start", "end", "start_explicit", "end_explicit", "expected"),
+    [
+        # neither explicit, both <= 12, end <= start: end shifts to PM
+        ((9, 0, False), (5, 0, False), False, False, ("09:00", "17:00")),
+        # neither explicit, both <= 12, end already later: no shift needed
+        ((9, 0, False), (11, 0, False), False, False, ("09:00", "11:00")),
+        ((2, 0, False), (5, 0, False), False, False, ("02:00", "05:00")),
+        # end equal to start: still shifts, since it can't be a same-hour span
+        ((9, 0, False), (9, 0, False), False, False, ("09:00", "21:00")),
+        # neither explicit, start already > 12 (a bare digit like "13" has no
+        # 12-hour reading): both taken at face value
+        ((13, 0, True), (2, 0, False), False, False, ("13:00", "02:00")),
+        ((14, 0, True), (5, 0, False), False, False, ("14:00", "05:00")),
+    ],
+)
+def test_resolve_pair_no_wrap(
+    start: tuple[int, int, bool],
+    end: tuple[int, int, bool],
+    start_explicit: bool,
+    end_explicit: bool,
+    expected: tuple[str, str],
+) -> None:
+    """Test _resolve_pair_no_wrap never assumes an overnight span."""
+    assert _resolve_pair_no_wrap(start, end, start_explicit, end_explicit) == expected
+
+
+def test_resolve_pair_no_wrap_explicit_times_unaffected() -> None:
+    """Test explicit (am/pm or colon) times pass through unchanged."""
+    assert _resolve_pair_no_wrap(
+        (8, 0, True), (17, 30, True), start_explicit=True, end_explicit=True
+    ) == ("08:00", "17:30")
+
+
+def test_resolve_pair_no_wrap_start_explicit_end_ambiguous() -> None:
+    """Test an explicit start resolves an ambiguous end, same as _resolve_pair."""
+    assert _resolve_pair_no_wrap(
+        (8, 0, True), (5, 0, False), start_explicit=True, end_explicit=False
+    ) == ("08:00", "17:00")
+
+
+def test_resolve_pair_no_wrap_end_explicit_start_ambiguous() -> None:
+    """Test an explicit end resolves an ambiguous start, same as _resolve_pair."""
+    assert _resolve_pair_no_wrap(
+        (9, 0, False), (17, 0, True), start_explicit=False, end_explicit=True
+    ) == ("09:00", "17:00")
+
+
+@pytest.mark.parametrize(
     ("token", "expected"),
     [
         ("08:00-12:00", TimeSpan(start="08:00", end="12:00")),
@@ -359,6 +408,59 @@ def test_get_hours_am_pm() -> None:
 def test_get_hours_bare_hours() -> None:
     """Test bare digit hours with no am/pm are treated as business hours."""
     assert get_hours("Mon-Fri 9-5") == "Mo-Fr 09:00-17:00"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # classic case: both small, end shifts to PM to avoid a backwards span
+        ("Mon-Fri 9-5", "Mo-Fr 09:00-17:00"),
+        ("6-7", "06:00-07:00"),
+        ("7-6", "07:00-18:00"),
+        # a bare colon form (no am/pm marker) is exactly as ambiguous as a
+        # bare digit -- this is the original bug: without no_wrap, this
+        # resolves to "09:00-05:00" (open until 5 AM instead of 5 PM)
+        ("Mon-Fri 9:00-5:00", "Mo-Fr 09:00-17:00"),
+        ("6:00-7:00", "06:00-07:00"),
+        ("7:00-6:00", "07:00-18:00"),
+        # start already unambiguous (> 12, no 12-hour reading): taken at
+        # face value, no assumed overnight-avoidance -- this is an
+        # intentional overnight span
+        ("Mon-Fri 13-2", "Mo-Fr 13:00-02:00"),
+        ("Mon-Fri 14-5", "Mo-Fr 14:00-05:00"),
+        # both small, end already later than start: no shift needed
+        ("Mon-Fri 9-11", "Mo-Fr 09:00-11:00"),
+        ("Mon-Fri 2-5", "Mo-Fr 02:00-05:00"),
+        # both small, end <= start: shifts to PM even though the result
+        # looks like it could plausibly have been an overnight span --
+        # no_wrap never guesses one, so this is NOT "09:00-02:00"
+        ("Mon-Fri 9-2", "Mo-Fr 09:00-14:00"),
+        # explicit am/pm markers are unaffected by no_wrap
+        ("Mon-Fri 9am-5pm", "Mo-Fr 09:00-17:00"),
+        # both explicit (real am/pm markers): can still cross midnight,
+        # since that's an intentional signal, not a guess
+        ("Fri-Sat 10pm-2am", "Fr-Sa 22:00-02:00"),
+        # bare digits above 12 on both sides: neither is "explicit", but
+        # the start magnitude alone means it can still cross midnight,
+        # since a bare "22" has no 12-hour reading either
+        ("Fri-Sat 22:00-02:00", "Fr-Sa 22:00-02:00"),
+    ],
+)
+def test_get_hours_no_wrap(value: str, expected: str) -> None:
+    """Test get_hours(no_wrap=True) never assumes an overnight span."""
+    assert get_hours(value, no_wrap=True) == expected
+
+
+def test_get_hours_no_wrap_still_rejects_implausible_backwards_span() -> None:
+    """Test no_wrap doesn't disable the pre-existing overnight sanity check.
+
+    A bare span that resolves backwards (end < start) with an end hour too
+    late in the day to be a plausible overnight close still raises, exactly
+    as it would without no_wrap -- no_wrap only changes how an ambiguous
+    hour is interpreted, not whether an implausible result is caught.
+    """
+    with pytest.raises(ValueError, match="isn't a plausible overnight"):
+        get_hours("Mon-Fri 16-14", no_wrap=True)
 
 
 def test_get_hours_multiple_semicolon_rules() -> None:
